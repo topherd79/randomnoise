@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, index } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 /** Everyone who can log in. The admin is a regular player too (matched by ADMIN_EMAIL). */
 export const users = pgTable("users", {
@@ -45,3 +45,64 @@ export const sessions = pgTable(
 );
 
 export type User = typeof users.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Catalog
+// ---------------------------------------------------------------------------
+
+/**
+ * How a song's clip is chosen when a game is created:
+ * - surprise: a random spot, avoiding the very start, the end and quiet parts (default)
+ * - start: from 0:00
+ * - spots: one of the spots the admin marked on the sound wave, picked at random
+ */
+export type ClipMode = "surprise" | "start" | "spots";
+
+/** "pending" until the automatic details lookup has run. */
+export type LookupStatus = "pending" | "found" | "not_found" | "error";
+
+/** One row per song file in the running catalog. Files live on the data volume (see src/lib/storage.ts). */
+export const songs = pgTable(
+  "songs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    artist: text("artist").notNull(),
+    album: text("album"),
+    year: integer("year"),
+    genre: text("genre"),
+    artworkUrl: text("artwork_url"),
+    /** Exact links when the lookup found them; pages fall back to a search link otherwise. */
+    appleMusicUrl: text("apple_music_url"),
+    spotifyUrl: text("spotify_url"),
+    lookupStatus: text("lookup_status").$type<LookupStatus>().notNull().default("pending"),
+    /** True when the details may be wrong (no tags in the file, or the lookup found nothing). */
+    needsReview: boolean("needs_review").notNull().default(false),
+
+    durationSec: real("duration_sec").notNull(),
+    /** File name inside the songs folder, e.g. "<uuid>.mp3". */
+    fileName: text("file_name").notNull(),
+    /** Content-Type the file is served with: audio/mpeg or audio/mp4. */
+    mimeType: text("mime_type").notNull(),
+    originalFileName: text("original_file_name").notNull(),
+    /** SHA-256 of the uploaded file, so the same file can't be added twice. */
+    fileHash: text("file_hash").notNull().unique(),
+    sizeBytes: integer("size_bytes").notNull(),
+    /** Loudness of the song in evenly spaced slices, 0–100, for the sound-wave picture. */
+    waveform: jsonb("waveform").$type<number[]>().notNull(),
+
+    clipMode: text("clip_mode").$type<ClipMode>().notNull().default("surprise"),
+    /** Start times in seconds, used when clipMode is "spots". */
+    clipSpots: jsonb("clip_spots").$type<number[]>().notNull().default([]),
+    /** Overrides the game's clip length for this song (seconds). */
+    clipLengthSec: integer("clip_length_sec"),
+    /** Admin-uploaded clip used instead of cutting one (file name inside the custom-clips folder). */
+    customClipFile: text("custom_clip_file"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("songs_lookup_status_idx").on(t.lookupStatus)],
+);
+
+export type Song = typeof songs.$inferSelect;

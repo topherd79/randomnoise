@@ -36,6 +36,9 @@ songs of a game in progress.
   whole project and deletes anything it doesn't list, so adopting it is a deliberate decision.
 - Service variables: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `APP_URL`, `ADMIN_EMAIL`,
   `EMAIL_FROM`, `RESEND_API_KEY`.
+- Song files and clips live on a Railway volume attached to the app service at `/data` (Railway sets
+  `RAILWAY_VOLUME_MOUNT_PATH`). All file paths go through `src/lib/storage.ts`; audio work (tags,
+  conversion, sound waves, clip cutting) is ffmpeg/ffprobe in `src/lib/audio.ts`.
 - DNS is on Cloudflare. The apex CNAME to Railway must stay **DNS only (grey cloud)**. If it's
   proxied, Railway can't verify the domain and serves its "Not Found" page instead of the app.
 
@@ -51,6 +54,11 @@ songs of a game in progress.
 - **Email in development:** with no `RESEND_API_KEY`, emails (and their links) print to the server
   console. Note: the Claude cloud environment may have a real `RESEND_API_KEY` in its environment —
   unset it (`env -u RESEND_API_KEY …`) when running the app for tests so no real email goes out.
+- **Song details lookup:** Apple's free song search (`src/lib/lookup.ts`), about 20 searches a
+  minute, so the catalog page runs lookups one at a time. song.link's free API is gone; Spotify links
+  are exact only if `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` are set, otherwise a search link.
+- **Audio responses** must support HTTP Range (`serveFile` in `src/lib/storage.ts`): iPhone Safari won't
+  play audio without it.
 - Phone screens: max width `max-w-md`, respect safe areas, inputs at 16px+ so iOS doesn't zoom.
   Admin screens are laid out for a desktop browser.
 
