@@ -11,12 +11,16 @@ and games from a desktop browser.
 
 - Magic-link login (link → "Tap to log in" page → logged in for a year)
 - Admin player list: add, edit, remove, copy a login link, email a login link or invite
+- Song catalog: drop in a folder of songs; title and artist come from each file, then artwork, year,
+  genre and an Apple Music link are looked up. Each song has a clip setting (surprise me, start of
+  song, or spots picked on its sound wave) and can have a custom clip.
 
-Next up: the song catalog (upload, clip settings, auto-filled details), then games.
+Next up: games.
 
 ## Run it locally
 
-You need Node 22+ and a Postgres database.
+You need Node 22+, ffmpeg and a Postgres database. Song files are stored in `./data` (set `DATA_DIR`
+to put them elsewhere).
 
 ```bash
 npm install
@@ -38,6 +42,8 @@ Open http://localhost:3000/login and enter the admin email. Without `RESEND_API_
 | `ADMIN_NAME` | The admin's display name on first login. Defaults to `Topher` |
 | `RESEND_API_KEY` | Resend API key. Leave empty locally |
 | `EMAIL_FROM` | Sender, e.g. `Random Noise <game@randomnoise.ai>` |
+| `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | Optional. With a Spotify developer app's keys, songs get exact Spotify links; without them, the Spotify button opens a search |
+| `DATA_DIR` | Optional. Where song files and clips live. Defaults to the Railway volume, or `./data` locally |
 
 ## Deploying
 

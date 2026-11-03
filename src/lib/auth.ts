@@ -51,6 +51,16 @@ export async function requireAdmin(): Promise<CurrentUser> {
   return user;
 }
 
+/**
+ * For route handlers, where redirect()/notFound() aren't the right answer:
+ * returns the admin, or a 404 response to send back.
+ */
+export async function adminForRoute(): Promise<CurrentUser | Response> {
+  const user = await getCurrentUser();
+  if (!user?.isAdmin) return new Response("Not found", { status: 404 });
+  return user;
+}
+
 /** Log a user in: create a session row and set the cookie. Server actions only. */
 export async function startSession(userId: string): Promise<void> {
   const token = newToken();
