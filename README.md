@@ -41,8 +41,15 @@ Open http://localhost:3000/login and enter the admin email. Without `RESEND_API_
 
 ## Deploying
 
-Railway builds the `Dockerfile` and runs `npm start`, which applies database migrations and then starts
-the app. The health check is `/api/health`.
+Every push to `main` deploys to Railway (project `randomnoise`, service `randomnoise`, with a
+`Postgres` service next to it). Railway builds the `Dockerfile` and runs `npm start`, which applies
+database migrations and then starts the app.
+
+The health check (`/api/health`) and restart policy are set in the service's settings in Railway;
+there is no `railway.json` because Railway no longer reads it for new services.
+
+The domain randomnoise.ai points to Railway with a CNAME in Cloudflare. Keep that record
+**DNS only** (grey cloud): if it's proxied, Railway can't verify the domain.
 
 ## Database changes
 

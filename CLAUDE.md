@@ -24,7 +24,20 @@ songs of a game in progress.
   every page depends on the logged-in user, so the classic dynamic model is simpler.
 - Postgres via Drizzle ORM (`src/db/schema.ts`), node-postgres driver.
 - Resend for email (`src/lib/email.ts`).
-- Dockerfile build on Railway (includes ffmpeg for clip cutting); `railway.json` sets the health check.
+- Dockerfile build on Railway (includes ffmpeg for clip cutting). See "Hosting" below.
+
+## Hosting
+
+- Railway project **randomnoise** has two services: `randomnoise` (this app) and `Postgres`. Every
+  push to `main` deploys automatically.
+- Deploy settings are set on the service in Railway, not in the repo: Dockerfile build, health check
+  `/api/health` (120s timeout), restart on failure (5 retries). Railway no longer reads `railway.json`
+  for new services, so don't add one back. Its replacement, `.railway/railway.ts`, describes the
+  whole project and deletes anything it doesn't list, so adopting it is a deliberate decision.
+- Service variables: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `APP_URL`, `ADMIN_EMAIL`,
+  `EMAIL_FROM`, `RESEND_API_KEY`.
+- DNS is on Cloudflare. The apex CNAME to Railway must stay **DNS only (grey cloud)**. If it's
+  proxied, Railway can't verify the domain and serves its "Not Found" page instead of the app.
 
 ## Conventions
 
