@@ -14,7 +14,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
             Admin
           </span>
         </div>
-        <AdminNav gamesReady={false} />
+        <AdminNav />
       </header>
       <main className="pt-8">{children}</main>
     </div>

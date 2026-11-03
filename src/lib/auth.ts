@@ -84,11 +84,17 @@ export async function endSession(): Promise<void> {
   store.delete(SESSION_COOKIE);
 }
 
-/** Create a fresh one-time login link for a player. */
-export async function createLoginUrl(userId: string): Promise<string> {
+/** Only same-site paths are allowed as a place to land after logging in. */
+export function safeNext(next: string | null | undefined): string {
+  return next && /^\/(?!\/)[\w\-/]*$/.test(next) ? next : "/";
+}
+
+/** Create a fresh one-time login link for a player, optionally landing on a page (e.g. their game). */
+export async function createLoginUrl(userId: string, next?: string): Promise<string> {
   const token = newToken();
   await db.insert(loginTokens).values({ userId, tokenHash: hashToken(token) });
-  return `${appUrl()}/auth/${token}`;
+  const landing = next && safeNext(next) !== "/" ? `?next=${encodeURIComponent(safeNext(next))}` : "";
+  return `${appUrl()}/auth/${token}${landing}`;
 }
 
 /** Look up a login link without using it up (for the "tap to log in" page). */

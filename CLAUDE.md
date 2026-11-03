@@ -13,7 +13,8 @@ https://claude.ai/artifact/H477Nc2h2RAwzVDDH8VHva — read it before changing ga
 The admin uploads songs (full mp3s) into a running catalog. A game draws 5/10/15/20/25 unplayed songs
 at random. For each song, a player taps Play: a short clip and the answer clock start together, four
 "Title – Artist" choices (1 right, 3 random other catalog songs) reveal letter by letter and finish
-together, and a faster correct answer scores more (1,000 sliding to 100; wrong = 0 in v1). Players
+together, and a faster correct answer scores more (1,000 sliding to 100; a wrong answer loses a third
+of what a right one would have earned, so guessing is worth zero on average). Players
 answer on their own time; the group moves to the next song only when everyone has answered, then
 sees everyone's picks and the standings. The admin also plays, so admin screens never show the
 songs of a game in progress.
@@ -59,6 +60,12 @@ songs of a game in progress.
   are exact only if `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` are set, otherwise a search link.
 - **Audio responses** must support HTTP Range (`serveFile` in `src/lib/storage.ts`): iPhone Safari won't
   play audio without it.
+- **Game rules and numbers** (reveal time, cutoff, points, guessing penalty) are all in
+  `src/lib/rules.ts`. The server keeps the clock (`answers.started_at` is set when the clip actually
+  starts playing) and scores every answer; the phone is never told which choice is right.
+- **Admin screens never show the songs of a game in progress** (the admin plays too): see
+  `src/lib/admin-games.ts`. Clips have random file names, are only served to players in that game
+  and never ahead of the current song; the full song unlocks only after a player answers.
 - Phone screens: max width `max-w-md`, respect safe areas, inputs at 16px+ so iOS doesn't zoom.
   Admin screens are laid out for a desktop browser.
 

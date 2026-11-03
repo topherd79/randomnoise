@@ -93,3 +93,70 @@ export function inviteEmail(name: string, url: string) {
     }),
   };
 }
+
+function names(list: string[]): string {
+  if (list.length <= 1) return list.join("");
+  return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+}
+
+export function gameOnEmail(name: string, url: string, game: { songCount: number; others: string[] }) {
+  const withWho = game.others.length ? ` with ${names(game.others)}` : "";
+  return {
+    subject: `Game on: ${game.songCount} songs`,
+    ...layout({
+      heading: `${name}, a new game is on`,
+      lines: [
+        `${game.songCount} songs${withWho}. Play each one whenever you like; the next song opens once everyone has answered.`,
+        "Song 1 is waiting.",
+      ],
+      buttonText: "Play song 1",
+      url,
+    }),
+  };
+}
+
+export function roundDoneEmail(name: string, url: string, round: { position: number; total: number }) {
+  return {
+    subject: `Song ${round.position} results are in`,
+    ...layout({
+      heading: `Everyone has answered song ${round.position}`,
+      lines: [`${name}, see who got it and how fast, then play song ${round.position + 1} of ${round.total}.`],
+      buttonText: "See the results",
+      url,
+    }),
+  };
+}
+
+export function nudgeEmail(name: string, url: string, fromName: string, position: number) {
+  return {
+    subject: `${fromName} nudged you`,
+    ...layout({
+      heading: `${name}, everyone's waiting on you`,
+      lines: [`${fromName} nudged you: song ${position} opens up the results as soon as you answer it.`],
+      buttonText: `Play song ${position}`,
+      url,
+    }),
+  };
+}
+
+export function gameOverEmail(name: string, url: string, standings: { name: string; points: number }[]) {
+  const winner = standings[0];
+  const tied = standings.filter((s) => s.points === winner?.points);
+  const headline = !winner
+    ? "Game over"
+    : tied.length > 1
+      ? `Game over: ${names(tied.map((t) => t.name))} tie`
+      : `Game over: ${winner.name} wins`;
+  return {
+    subject: headline,
+    ...layout({
+      heading: headline,
+      lines: [
+        ...standings.map((s, i) => `${i + 1}. ${s.name}: ${s.points.toLocaleString("en-US")} points`),
+        `Thanks for playing, ${name}.`,
+      ],
+      buttonText: "See the final results",
+      url,
+    }),
+  };
+}

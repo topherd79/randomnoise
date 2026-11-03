@@ -9,19 +9,12 @@ const links = [
   { href: "/admin/games", label: "Games" },
 ];
 
-export function AdminNav({ gamesReady }: { gamesReady: boolean }) {
+export function AdminNav() {
   const pathname = usePathname();
   return (
     <nav className="flex items-center gap-6 text-sm">
       {links.map((l) => {
         const active = l.exact ? pathname === l.href : pathname.startsWith(l.href);
-        if (l.href === "/admin/games" && !gamesReady) {
-          return (
-            <span key={l.href} className="text-muted/60" title="Coming next">
-              {l.label}
-            </span>
-          );
-        }
         return (
           <Link
             key={l.href}
