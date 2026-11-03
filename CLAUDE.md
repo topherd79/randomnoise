@@ -1,0 +1,48 @@
+@AGENTS.md
+
+# Random Noise
+
+A private, turn-based song-guessing game for a small group of friends (1–5 players per game),
+played in mobile Safari on iPhones. Hosted on Railway, email through Resend, domain randomnoise.ai.
+
+The full product decisions (and the reasoning behind them) live in the decision log:
+https://claude.ai/artifact/H477Nc2h2RAwzVDDH8VHva — read it before changing game rules.
+
+## The game in one paragraph
+
+The admin uploads songs (full mp3s) into a running catalog. A game draws 5/10/15/20/25 unplayed songs
+at random. For each song, a player taps Play: a short clip and the answer clock start together, four
+"Title – Artist" choices (1 right, 3 random other catalog songs) reveal letter by letter and finish
+together, and a faster correct answer scores more (1,000 sliding to 100; wrong = 0 in v1). Players
+answer on their own time; the group moves to the next song only when everyone has answered, then
+sees everyone's picks and the standings. The admin also plays, so admin screens never show the
+songs of a game in progress.
+
+## Stack
+
+- Next.js 16 (App Router, TypeScript, Tailwind v4). `cacheComponents` is deliberately **off**: nearly
+  every page depends on the logged-in user, so the classic dynamic model is simpler.
+- Postgres via Drizzle ORM (`src/db/schema.ts`), node-postgres driver.
+- Resend for email (`src/lib/email.ts`).
+- Dockerfile build on Railway (includes ffmpeg for clip cutting); `railway.json` sets the health check.
+
+## Conventions
+
+- **Auth:** magic links only. `/auth/[token]` shows a "Log in" button; only the button (a server
+  action) uses up the token, so link scanners and iMessage previews can't burn it. Tokens don't expire
+  with time. Sessions last a year. Helpers are in `src/lib/auth.ts`.
+- **Admin:** the user whose email equals `ADMIN_EMAIL`. Call `requireAdmin()` at the top of every
+  admin page **and every admin server action** (server actions are public endpoints).
+- **Schema changes:** edit `src/db/schema.ts`, run `npm run db:generate`, commit the new file in
+  `drizzle/`. Migrations run automatically on start (`npm start` runs `scripts/migrate.mjs` first).
+- **Email in development:** with no `RESEND_API_KEY`, emails (and their links) print to the server
+  console. Note: the Claude cloud environment may have a real `RESEND_API_KEY` in its environment —
+  unset it (`env -u RESEND_API_KEY …`) when running the app for tests so no real email goes out.
+- Phone screens: max width `max-w-md`, respect safe areas, inputs at 16px+ so iOS doesn't zoom.
+  Admin screens are laid out for a desktop browser.
+
+## Checks
+
+```bash
+npm run typecheck && npm run lint && npm run build
+```
