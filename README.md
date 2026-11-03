@@ -14,8 +14,14 @@ and games from a desktop browser.
 - Song catalog: drop in a folder of songs; title and artist come from each file, then artwork, year,
   genre and an Apple Music link are looked up. Each song has a clip setting (surprise me, start of
   song, or spots picked on its sound wave) and can have a custom clip.
+- Games: the admin picks 1–5 players, 5–25 songs, a clip length and random or "similar era and
+  genre" wrong answers. Clips are cut when the game is created. Players tap Play, the four answers
+  reveal letter by letter, and the server keeps the clock and the score. When everyone has answered a
+  song, everyone sees the picks and standings and the next song opens. Emails: game on, results are
+  in, nudge, game over. The admin's game page shows progress only (never the songs) and can reset a
+  player's attempt or end a game.
 
-Next up: games.
+The scoring numbers live in `src/lib/rules.ts`, ready to tune after test games.
 
 ## Run it locally
 

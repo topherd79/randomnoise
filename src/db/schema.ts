@@ -1,4 +1,16 @@
-import { boolean, index, integer, jsonb, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 /** Everyone who can log in. The admin is a regular player too (matched by ADMIN_EMAIL). */
 export const users = pgTable("users", {
@@ -106,3 +118,116 @@ export const songs = pgTable(
 );
 
 export type Song = typeof songs.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Games
+// ---------------------------------------------------------------------------
+
+export type GameStatus = "active" | "finished" | "cancelled";
+
+/** How the three wrong answers for each song are picked. */
+export type WrongAnswerMode = "random" | "similar";
+
+/** One answer choice, frozen when the game is created ("Title – Artist" never changes mid-game). */
+export type Choice = { songId: string; title: string; artist: string };
+
+export const games = pgTable("games", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  status: text("status").$type<GameStatus>().notNull().default("active"),
+  songCount: integer("song_count").notNull(),
+  clipLengthSec: integer("clip_length_sec").notNull(),
+  wrongAnswers: text("wrong_answers").$type<WrongAnswerMode>().notNull().default("random"),
+  /** The song everyone is on now, 1-based. Moves on when every player has answered it. */
+  currentPosition: integer("current_position").notNull().default(1),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+});
+
+export const gamePlayers = pgTable(
+  "game_players",
+  {
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.gameId, t.userId] }), index("game_players_user_idx").on(t.userId)],
+);
+
+/** The songs drawn for a game, in play order, with the clip cut for each. */
+export const gameSongs = pgTable(
+  "game_songs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    songId: uuid("song_id")
+      .notNull()
+      .references(() => songs.id, { onDelete: "restrict" }),
+    /** Random file name in the clips folder, so the URL gives nothing away. */
+    clipFile: text("clip_file").notNull(),
+    clipStartSec: real("clip_start_sec").notNull(),
+    clipLengthSec: real("clip_length_sec").notNull(),
+    /** The right answer plus three wrong ones (each player sees them in their own order). */
+    choices: jsonb("choices").$type<Choice[]>().notNull(),
+    /** Set when the last player answers; then everyone sees the results. */
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("game_songs_game_position_idx").on(t.gameId, t.position),
+    uniqueIndex("game_songs_clip_file_idx").on(t.clipFile),
+    index("game_songs_song_idx").on(t.songId),
+  ],
+);
+
+/**
+ * One player's go at one song. The server keeps the clock: startedAt is when
+ * they tapped Play (the clip started), answeredAt when their pick arrived.
+ */
+export const answers = pgTable(
+  "answers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    gameSongId: uuid("game_song_id")
+      .notNull()
+      .references(() => gameSongs.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
+    choiceSongId: uuid("choice_song_id"),
+    correct: boolean("correct"),
+    elapsedMs: integer("elapsed_ms"),
+    points: integer("points"),
+  },
+  (t) => [uniqueIndex("answers_game_song_user_idx").on(t.gameSongId, t.userId), index("answers_user_idx").on(t.userId)],
+);
+
+/** "Nudge" emails, kept so one player can't flood another. */
+export const nudges = pgTable(
+  "nudges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    gameSongId: uuid("game_song_id")
+      .notNull()
+      .references(() => gameSongs.id, { onDelete: "cascade" }),
+    fromUserId: uuid("from_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    toUserId: uuid("to_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("nudges_game_song_idx").on(t.gameSongId)],
+);
+
+export type Game = typeof games.$inferSelect;
+export type GameSong = typeof gameSongs.$inferSelect;
+export type Answer = typeof answers.$inferSelect;

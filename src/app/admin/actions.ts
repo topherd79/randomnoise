@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { sessions, users } from "@/db/schema";
+import { gamePlayers, games, sessions, users } from "@/db/schema";
 import { createLoginUrl, requireAdmin } from "@/lib/auth";
 import { inviteEmail, loginEmail, sendEmail } from "@/lib/email";
 import { adminEmail, normalizeEmail } from "@/lib/env";
+import { afterPlayerRemoved } from "@/lib/games";
 
 // Every action here re-checks the admin: server actions are public endpoints.
 
@@ -78,7 +79,14 @@ export async function updatePlayer(_prev: FormResult, formData: FormData): Promi
 export async function removePlayer(id: string): Promise<FormResult> {
   const me = await requireAdmin();
   if (id === me.id) return { ok: false, message: "You can't remove yourself." };
+  const activeGames = await db
+    .select({ id: games.id })
+    .from(gamePlayers)
+    .innerJoin(games, eq(games.id, gamePlayers.gameId))
+    .where(and(eq(gamePlayers.userId, id), eq(games.status, "active")));
   await db.delete(users).where(eq(users.id, id));
+  // Their games shouldn't stay stuck waiting on them.
+  await afterPlayerRemoved(activeGames.map((g) => g.id));
   revalidatePath("/admin");
   return { ok: true, message: "Removed." };
 }

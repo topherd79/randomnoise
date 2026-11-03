@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { findLoginToken, getCurrentUser } from "@/lib/auth";
+import { findLoginToken, getCurrentUser, safeNext } from "@/lib/auth";
 import { Logo } from "@/components/Logo";
 import { SubmitButton } from "@/components/SubmitButton";
 import { confirmLogin } from "./actions";
@@ -11,6 +11,7 @@ import { confirmLogin } from "./actions";
  */
 export default async function AuthPage(props: PageProps<"/auth/[token]">) {
   const { token } = await props.params;
+  const next = safeNext((await props.searchParams).next?.toString());
   const [link, current] = await Promise.all([findLoginToken(token), getCurrentUser()]);
 
   let body: React.ReactNode;
@@ -21,7 +22,7 @@ export default async function AuthPage(props: PageProps<"/auth/[token]">) {
       <>
         <h1 className="text-3xl font-bold">You&apos;re already logged in.</h1>
         <Link
-          href="/"
+          href={next}
           className="mt-8 block rounded-full bg-accent py-4 text-center text-lg font-semibold text-accent-ink"
         >
           Go to the game
@@ -33,7 +34,7 @@ export default async function AuthPage(props: PageProps<"/auth/[token]">) {
       <>
         <p className="text-muted">Hi {link.name},</p>
         <h1 className="mt-2 text-3xl font-bold">Tap to log in.</h1>
-        <form action={confirmLogin.bind(null, token)} className="mt-8">
+        <form action={confirmLogin.bind(null, token, next)} className="mt-8">
           <SubmitButton pendingText="Logging in…" className="w-full py-4 text-lg">
             Log in
           </SubmitButton>

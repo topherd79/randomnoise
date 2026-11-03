@@ -15,6 +15,13 @@
       "when": 1793696790430,
       "tag": "0001_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793697377450,
+      "tag": "0002_games",
+      "breakpoints": true
     }
   ]
 }
