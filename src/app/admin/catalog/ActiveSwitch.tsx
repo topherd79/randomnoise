@@ -13,11 +13,14 @@ export function ActiveSwitch({
   active,
   title,
   withLabel = false,
+  onSaved,
 }: {
   id: string;
   active: boolean;
   title: string;
   withLabel?: boolean;
+  /** Called after a change is saved (e.g. so the upload list can keep its counts). */
+  onSaved?: (active: boolean) => void;
 }) {
   const [on, setOn] = useState(active);
   const [error, setError] = useState(false);
@@ -32,6 +35,8 @@ export function ActiveSwitch({
       if (!result?.ok) {
         setOn(!next);
         setError(true);
+      } else {
+        onSaved?.(next);
       }
     });
   }

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { asc, count, eq } from "drizzle-orm";
+import { asc, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { songs } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
@@ -142,6 +142,22 @@ export async function setSongActive(id: string, active: boolean): Promise<FormRe
   revalidatePath(`/admin/catalog/${id}`);
   revalidatePath("/admin/games");
   return { ok: true, message: active ? "On: new games can use it." : "Off: new games leave it out." };
+}
+
+/** Switch a batch of songs on or off at once (the upload list's "Switch all" buttons). */
+export async function setSongsActive(ids: string[], active: boolean): Promise<FormResult> {
+  await requireAdmin();
+  const parsed = z.object({ ids: z.array(z.uuid()).min(1).max(2000), active: z.boolean() }).safeParse({ ids, active });
+  if (!parsed.success) return { ok: false, message: "That setting doesn't look right." };
+  const updated = await db
+    .update(songs)
+    .set({ active: parsed.data.active, updatedAt: new Date() })
+    .where(inArray(songs.id, parsed.data.ids))
+    .returning({ id: songs.id });
+  revalidatePath("/admin/catalog");
+  revalidatePath("/admin/games");
+  const n = updated.length;
+  return { ok: true, message: `${n} ${n === 1 ? "song" : "songs"} switched ${parsed.data.active ? "on" : "off"}.` };
 }
 
 export async function removeCustomClip(id: string): Promise<FormResult> {

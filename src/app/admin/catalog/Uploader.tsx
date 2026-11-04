@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ActiveSwitch } from "./ActiveSwitch";
+import { setSongsActive } from "./actions";
 
 const AUDIO_EXT = /\.(mp3|m4a|mp4|aac|wav|aif|aiff|flac|ogg|opus|m4p)$/i;
 const PARALLEL = 2;
@@ -12,9 +14,15 @@ type Item = {
   status: "queued" | "uploading" | "done" | "failed";
   progress: number;
   message?: string;
+  /** Set once the song is in the catalog, so it can be switched on or off right here. */
+  song?: { id: string; title: string; active: boolean };
 };
 
-type UploadResponse = { ok: boolean; error?: string; song?: { title: string; artist: string; needsReview: boolean } };
+type UploadResponse = {
+  ok: boolean;
+  error?: string;
+  song?: { id: string; title: string; artist: string; needsReview: boolean };
+};
 
 function upload(url: string, file: File, onProgress: (p: number) => void): Promise<UploadResponse> {
   return new Promise((resolve) => {
@@ -92,6 +100,8 @@ export function Uploader() {
           message: r.ok
             ? `${r.song?.title} · ${r.song?.artist}${r.song?.needsReview ? " (check the details)" : ""}`
             : r.error,
+          // New songs start switched on, like everything in the catalog.
+          song: r.ok && r.song ? { id: r.song.id, title: r.song.title, active: true } : undefined,
         });
         if (running.current === 0 && queue.current.length === 0) {
           // Show the new songs (this also starts the details lookup).
@@ -122,6 +132,32 @@ export function Uploader() {
 
   const done = items.filter((i) => i.status === "done").length;
   const failed = items.filter((i) => i.status === "failed");
+
+  // On/off for the songs added in this batch.
+  const added = items.flatMap((i) => (i.song ? [i.song] : []));
+  const onCount = added.filter((s) => s.active).length;
+  const [switching, startSwitching] = useTransition();
+  const [switchNote, setSwitchNote] = useState<{ ok: boolean; message: string } | null>(null);
+
+  function setSongState(id: string, on: boolean) {
+    setItems((all) => all.map((i) => (i.song?.id === id ? { ...i, song: { ...i.song, active: on } } : i)));
+  }
+
+  function switchAll(on: boolean) {
+    const ids = added.filter((s) => s.active !== on).map((s) => s.id);
+    if (ids.length === 0) return;
+    setSwitchNote(null);
+    startSwitching(async () => {
+      const r = await setSongsActive(ids, on).catch(() => null);
+      if (!r?.ok) {
+        setSwitchNote({ ok: false, message: r?.message ?? "That didn't save. Try again." });
+        return;
+      }
+      setItems((all) => all.map((i) => (i.song && ids.includes(i.song.id) ? { ...i, song: { ...i.song, active: on } } : i)));
+      setSwitchNote(r);
+      router.refresh();
+    });
+  }
 
   return (
     <section>
@@ -188,6 +224,7 @@ export function Uploader() {
                 onClick={() => {
                   setItems([]);
                   setSkipped(0);
+                  setSwitchNote(null);
                 }}
                 className="text-muted hover:text-ink"
               >
@@ -195,6 +232,36 @@ export function Uploader() {
               </button>
             )}
           </div>
+          {added.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-bg/60 px-3 py-2 text-sm">
+              <span className="text-muted">
+                This batch: <span className="text-ink">{onCount} in games</span> · {added.length - onCount} left out
+              </span>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => switchAll(false)}
+                  disabled={switching || onCount === 0}
+                  className="rounded-full bg-surface-2 px-3 py-1 text-xs font-semibold text-ink transition hover:bg-line disabled:opacity-40"
+                >
+                  Switch all off
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchAll(true)}
+                  disabled={switching || onCount === added.length}
+                  className="rounded-full bg-surface-2 px-3 py-1 text-xs font-semibold text-ink transition hover:bg-line disabled:opacity-40"
+                >
+                  Switch all on
+                </button>
+              </span>
+              {switchNote && (
+                <span className={`text-xs ${switchNote.ok ? "text-muted" : "text-danger"}`} role="status">
+                  {switchNote.message}
+                </span>
+              )}
+            </div>
+          )}
           <ul className="mt-3 max-h-72 divide-y divide-line overflow-y-auto text-sm">
             {items.map((i) => (
               <li key={i.key} className="flex items-center gap-3 py-2">
@@ -213,6 +280,16 @@ export function Uploader() {
                   <span className="w-24 overflow-hidden rounded-full bg-surface-2">
                     <span className="block h-1.5 bg-accent" style={{ width: `${Math.round(i.progress * 100)}%` }} />
                   </span>
+                )}
+                {i.song && (
+                  // Keyed on its state so "Switch all" redraws it; its own taps report back via onSaved.
+                  <ActiveSwitch
+                    key={`${i.song.id}-${i.song.active}`}
+                    id={i.song.id}
+                    active={i.song.active}
+                    title={i.song.title}
+                    onSaved={(on) => setSongState(i.song!.id, on)}
+                  />
                 )}
               </li>
             ))}
