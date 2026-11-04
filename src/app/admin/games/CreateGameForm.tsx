@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { CLIP_LENGTHS } from "@/lib/clips";
@@ -36,6 +37,8 @@ export function CreateGameForm({ players, unplayed, catalogSize }: { players: Pl
   const [clipLength, setClipLength] = useState<number>(10);
   const [wrong, setWrong] = useState<"random" | "similar">("random");
   const canCreate = fits.length > 0 && catalogSize >= 4 && picked.size > 0;
+  const shortest = GAME_LENGTHS[0];
+  const shortBy = shortest - unplayed;
 
   return (
     <form action={formAction} className="flex flex-col gap-6 rounded-2xl bg-surface p-5">
@@ -116,6 +119,19 @@ export function CreateGameForm({ players, unplayed, catalogSize }: { players: Pl
         </p>
       </fieldset>
 
+      {/* Say why the button is greyed out instead of leaving it a mystery. */}
+      {catalogSize >= 4 && fits.length === 0 && (
+        <p className="rounded-xl bg-danger/10 p-3 text-sm leading-relaxed text-danger" role="status">
+          Not enough new songs to start a game. Only {unplayed} switched-on{" "}
+          {unplayed === 1 ? "song hasn't" : "songs haven't"} been played yet, and the shortest game needs {shortest}.
+          Songs from earlier games don&apos;t come back, so add at least {shortBy} more on the{" "}
+          <Link href="/admin/catalog" className="font-semibold underline">
+            Catalog page
+          </Link>{" "}
+          (or switch some songs back on).
+        </p>
+      )}
+      {fits.length > 0 && picked.size === 0 && <p className="text-sm text-danger">Pick at least one player.</p>}
       <SubmitButton pendingText="Cutting clips…" className={canCreate ? "" : "pointer-events-none opacity-40"}>
         Start the game
       </SubmitButton>
