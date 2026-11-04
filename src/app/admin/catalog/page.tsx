@@ -67,8 +67,8 @@ export default async function CatalogPage() {
           <p className="mt-1 text-muted">
             {counts.total} {counts.total === 1 ? "song" : "songs"}
             {counts.total > counts.active && ` (${counts.total - counts.active} left out of games)`} ·{" "}
-            <span className="text-ink">{counts.unplayed} not played yet</span>. Each new game draws from the
-            songs that are switched on and that no game has used.
+            <span className="text-ink">{counts.unplayed} not played yet</span>. New games draw from the
+            switched-on songs no game has used, unless you choose to include songs from earlier games.
           </p>
         </div>
         {review > 0 && (

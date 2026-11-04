@@ -20,6 +20,7 @@ const gameSchema = z.object({
   songCount: z.coerce.number().refine((n) => (GAME_LENGTHS as readonly number[]).includes(n), "Pick how many songs."),
   clipLengthSec: z.coerce.number().refine((n) => (CLIP_LENGTHS as readonly number[]).includes(n), "Pick a clip length."),
   wrongAnswers: z.enum(["random", "similar"]),
+  songPool: z.enum(["new", "mix"]),
 });
 
 export async function createGameAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
@@ -29,6 +30,7 @@ export async function createGameAction(_prev: FormResult, formData: FormData): P
     songCount: formData.get("songCount"),
     clipLengthSec: formData.get("clipLengthSec"),
     wrongAnswers: formData.get("wrongAnswers") ?? "random",
+    songPool: formData.get("songPool") ?? "new",
   });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
 

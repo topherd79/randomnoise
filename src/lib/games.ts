@@ -87,29 +87,55 @@ export function pickWrongAnswers(
   return out;
 }
 
+/**
+ * Which songs a new game may use:
+ * - new: only songs no earlier game has used (the default)
+ * - mix: new songs first, then songs from earlier games, the ones played longest ago first
+ */
+export type SongPool = "new" | "mix";
+
 export async function createGame(opts: {
   playerIds: string[];
   songCount: number;
   clipLengthSec: number;
   wrongAnswers: WrongAnswerMode;
+  songPool?: SongPool;
   createdBy: string;
 }): Promise<Result<{ gameId: string }>> {
-  const { playerIds, songCount, clipLengthSec, wrongAnswers, createdBy } = opts;
+  const { playerIds, songCount, clipLengthSec, wrongAnswers, songPool = "new", createdBy } = opts;
 
   const players = await db.select({ id: users.id }).from(users).where(inArray(users.id, playerIds));
   if (players.length !== playerIds.length) return { ok: false, error: "One of those players no longer exists." };
 
   // Inactive songs are left out entirely: never drawn, never a wrong answer.
-  const drawn = await db
+  const fresh = await db
     .select()
     .from(songs)
     .where(and(eq(songs.active, true), sql`${songs.id} not in ${usedSongIdsSql}`))
     .orderBy(sql`random()`)
     .limit(songCount);
+  let drawn = fresh;
+  if (fresh.length < songCount && songPool === "mix") {
+    // Top up with songs from earlier games, the ones played longest ago first,
+    // then shuffle so the repeats aren't all bunched at the end of the game.
+    const repeats = await db
+      .select()
+      .from(songs)
+      .where(and(eq(songs.active, true), sql`${songs.id} in ${usedSongIdsSql}`))
+      .orderBy(
+        sql`(select max(g.created_at) from game_songs gs join games g on g.id = gs.game_id where gs.song_id = ${songs.id}) asc nulls first`,
+        sql`random()`,
+      )
+      .limit(songCount - fresh.length);
+    drawn = shuffle([...fresh, ...repeats], Math.random);
+  }
   if (drawn.length < songCount) {
     return {
       ok: false,
-      error: `There are only ${drawn.length} active, unplayed songs. Add or turn on ${songCount - drawn.length} more, or pick a shorter game.`,
+      error:
+        songPool === "mix"
+          ? `There are only ${drawn.length} switched-on songs in the catalog. Add or turn on ${songCount - drawn.length} more, or pick a shorter game.`
+          : `There are only ${drawn.length} new songs (switched on, not played yet). Include songs from earlier games, add or turn on ${songCount - drawn.length} more, or pick a shorter game.`,
     };
   }
   const pool = await db
