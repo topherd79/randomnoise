@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { answers, gamePlayers, gameSongs, games, songs, users, type Choice } from "@/db/schema";
 import { appleMusicLink, spotifyLink } from "./links";
@@ -220,4 +220,99 @@ export async function myGames(userId: string) {
   );
   const finished = rows.filter((r) => r.game.status === "finished").map((r) => ({ id: r.game.id, songCount: r.game.songCount, finishedAt: r.game.finishedAt }));
   return { active: states, finished };
+}
+
+// ---------------------------------------------------------------------------
+// Finished-game results (admin history and the game-over email)
+// ---------------------------------------------------------------------------
+
+export type SongResult = Omit<SongInfo, "fullUrl"> & { position: number; picks: Pick[] };
+
+export type GameResults = {
+  id: string;
+  status: "active" | "finished" | "cancelled";
+  songCount: number;
+  clipLengthSec: number;
+  createdAt: Date;
+  finishedAt: Date | null;
+  /** Best first, like the players' standings. */
+  standings: Standing[];
+  /** Completed songs only, in play order. */
+  songs: SongResult[];
+};
+
+/**
+ * Song-by-song results for several games at once (a handful of queries in total).
+ * Only completed songs are included, so this never reveals a song still to be
+ * played. Callers check who may see it: the admin for games that are over, or
+ * the game-over email to that game's players.
+ */
+export async function loadGameResults(gameIds: string[]): Promise<Map<string, GameResults>> {
+  const out = new Map<string, GameResults>();
+  if (gameIds.length === 0) return out;
+
+  const [gameRows, playerRows, rounds] = await Promise.all([
+    db.select().from(games).where(inArray(games.id, gameIds)),
+    db
+      .select({ gameId: gamePlayers.gameId, userId: users.id, name: users.name })
+      .from(gamePlayers)
+      .innerJoin(users, eq(users.id, gamePlayers.userId))
+      .where(inArray(gamePlayers.gameId, gameIds)),
+    db
+      .select({ gs: gameSongs, song: songs })
+      .from(gameSongs)
+      .innerJoin(songs, eq(songs.id, gameSongs.songId))
+      .where(and(inArray(gameSongs.gameId, gameIds), isNotNull(gameSongs.completedAt)))
+      .orderBy(asc(gameSongs.position)),
+  ]);
+  const roundAnswers = rounds.length
+    ? await db
+        .select()
+        .from(answers)
+        .where(inArray(answers.gameSongId, rounds.map((r) => r.gs.id)))
+    : [];
+
+  for (const g of gameRows) {
+    const players = playerRows.filter((p) => p.gameId === g.id).sort((a, b) => a.name.localeCompare(b.name));
+    const gameRounds = rounds.filter((r) => r.gs.gameId === g.id);
+    const totals = new Map(players.map((p) => [p.userId, { points: 0, correct: 0 }]));
+
+    const songResults: SongResult[] = gameRounds.map((r) => {
+      const labelOf = new Map(r.gs.choices.map((c: Choice) => [c.songId, choiceLabel(c)]));
+      const picks: Pick[] = players.map((p) => {
+        const a = roundAnswers.find((x) => x.gameSongId === r.gs.id && x.userId === p.userId);
+        const t = totals.get(p.userId)!;
+        t.points += a?.points ?? 0;
+        if (a?.correct) t.correct += 1;
+        return {
+          userId: p.userId,
+          name: p.name,
+          label: a?.choiceSongId ? (labelOf.get(a.choiceSongId) ?? null) : null,
+          correct: a?.correct ?? null,
+          points: a?.points ?? null,
+          elapsedMs: a?.elapsedMs ?? null,
+        };
+      });
+      const { fullUrl: _full, ...info } = songInfo(r.song, r.gs.id);
+      void _full;
+      return { ...info, position: r.gs.position, picks };
+    });
+
+    // Same order as the standings() query: most points, then name.
+    const table: Standing[] = players
+      .map((p) => ({ userId: p.userId, name: p.name, ...totals.get(p.userId)! }))
+      .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+
+    out.set(g.id, {
+      id: g.id,
+      status: g.status,
+      songCount: g.songCount,
+      clipLengthSec: g.clipLengthSec,
+      createdAt: g.createdAt,
+      finishedAt: g.finishedAt,
+      standings: table,
+      songs: songResults,
+    });
+  }
+  return out;
 }

@@ -181,7 +181,7 @@ export function CreateGameForm({ players, unplayed, catalogSize }: { players: Pl
       <SubmitButton pendingText="Cutting clips…" className={canCreate ? "" : "pointer-events-none opacity-40"}>
         Start the game
       </SubmitButton>
-      <p className="-mt-3 text-xs text-muted">Players get a “Game on” email with a login button.</p>
+      <p className="-mt-3 text-xs text-muted">Players get a “Game on” email with a login button, and one at the end with the full results.</p>
       {result && !result.ok && <p className="text-sm text-danger">{result.message}</p>}
     </form>
   );
