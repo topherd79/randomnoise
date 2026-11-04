@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { loadGameView, type GameView } from "@/lib/game-view";
 import { formatPoints, formatSeconds } from "@/lib/rules";
 import { Logo } from "@/components/Logo";
+import { LiveRefresh } from "@/components/LiveRefresh";
 import { PlayRound } from "./PlayRound";
 import { ResultsCard, SongCard, StandingsCard } from "./parts";
 import { Waiting } from "./Waiting";
@@ -69,6 +70,8 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
   const yourPick = round.choices.find((c) => c.songId === round.my.choiceSongId)?.label;
   return (
     <div className="flex flex-col gap-6 pt-6">
+      {/* Updates by itself as others answer; the results appear the moment the last one does. */}
+      <LiveRefresh gameIds={[view.id]} />
       <section>
         <p className={`text-3xl font-bold ${right ? "text-accent" : "text-danger"}`}>
           {right ? "You got it." : "Not this time."}
