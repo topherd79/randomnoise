@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { gameProgress } from "@/lib/admin-games";
+import { loadGameResults } from "@/lib/game-view";
+import { ResultsGrid } from "../ResultsGrid";
 import { formatPoints } from "@/lib/rules";
 import { GameControls, ResetButton } from "./GameControls";
 import { LiveRefresh } from "@/components/LiveRefresh";
@@ -22,6 +24,8 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
   if (!progress) notFound();
   const { game, players, standings, currentGameSongId } = progress;
   const active = game.status === "active";
+  // Song-by-song results only once the game is over (the admin plays too).
+  const results = active ? null : (await loadGameResults([game.id])).get(game.id);
 
   return (
     <div className="flex flex-col gap-8">
@@ -69,9 +73,11 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
           </section>
         ) : (
           <section>
-            <p className="text-muted">
-              This game is over. Players can see every song and everyone&apos;s picks on their game page.
+            <h2 className="text-lg font-bold">Song by song</h2>
+            <p className="mt-1 text-sm text-muted">
+              Every song, everyone&apos;s pick, how fast, and the points. Players see the same on their game page.
             </p>
+            <div className="mt-4">{results && <ResultsGrid results={results} />}</div>
           </section>
         )}
 

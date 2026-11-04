@@ -7,6 +7,8 @@ import { catalogCounts } from "@/lib/catalog-queries";
 import { gameSummaries } from "@/lib/admin-games";
 import { formatPoints } from "@/lib/rules";
 import { CreateGameForm } from "./CreateGameForm";
+import { ResultsGrid } from "./ResultsGrid";
+import { loadGameResults } from "@/lib/game-view";
 import { LiveRefresh } from "@/components/LiveRefresh";
 
 function names(list: string[]): string {
@@ -21,6 +23,8 @@ export default async function GamesPage() {
     catalogCounts(),
     gameSummaries(),
   ]);
+  // Song-by-song results for games that are over (never for one in progress: the admin plays too).
+  const results = await loadGameResults(summaries.filter((g) => g.status !== "active").map((g) => g.id));
 
   return (
     <div className="grid gap-10 lg:grid-cols-[1fr_360px]">
@@ -36,9 +40,9 @@ export default async function GamesPage() {
           </p>
         ) : (
           <ul className="mt-6 divide-y divide-line overflow-hidden rounded-2xl border border-line">
-            {summaries.map((g) => (
-              <li key={g.id}>
-                <Link href={`/admin/games/${g.id}`} className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-4 hover:bg-surface/50">
+            {summaries.map((g) => {
+              const row = (
+                <>
                   <span
                     className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${
                       g.status === "active" ? "bg-accent/15 text-accent" : "bg-surface-2 text-muted"
@@ -57,9 +61,35 @@ export default async function GamesPage() {
                   <span className="ml-auto text-sm text-muted">
                     {g.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   </span>
-                </Link>
-              </li>
-            ))}
+                </>
+              );
+              const done = results.get(g.id);
+              // Games in progress link to their progress page; games that are over open up in place.
+              return (
+                <li key={g.id}>
+                  {g.status === "active" || !done ? (
+                    <Link href={`/admin/games/${g.id}`} className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-4 hover:bg-surface/50">
+                      {row}
+                    </Link>
+                  ) : (
+                    <details className="group">
+                      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-6 gap-y-1 px-4 py-4 hover:bg-surface/50 [&::-webkit-details-marker]:hidden">
+                        <svg viewBox="0 0 12 12" className="size-3 shrink-0 text-muted transition-transform group-open:rotate-90" aria-hidden="true">
+                          <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        {row}
+                      </summary>
+                      <div className="flex flex-col gap-3 px-4 pb-5">
+                        <ResultsGrid results={done} />
+                        <Link href={`/admin/games/${g.id}`} className="self-start text-sm text-muted hover:text-ink">
+                          Open this game&apos;s page →
+                        </Link>
+                      </div>
+                    </details>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

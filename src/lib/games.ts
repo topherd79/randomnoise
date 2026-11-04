@@ -20,7 +20,7 @@ import { publishGameUpdate } from "./live";
 import { createLoginUrl } from "./auth";
 import { usedSongIdsSql } from "./catalog-queries";
 import { pickClipStart } from "./clips";
-import { gameOnEmail, gameOverEmail, nudgeEmail, roundDoneEmail, sendEmail } from "./email";
+import { gameOnEmail, gameOverEmail, nudgeEmail, sendEmail } from "./email";
 import { normalize } from "./lookup";
 import { scoreAnswer } from "./rules";
 import { ensureFolder, filePath, removeFile } from "./storage";
@@ -324,7 +324,9 @@ export async function completeRoundIfDone(gameSongId: string): Promise<void> {
     .set(last ? { status: "finished", finishedAt: new Date() } : { currentPosition: gs.position + 1 })
     .where(and(eq(games.id, game.id), eq(games.status, "active")));
   await publishGameUpdate(game.id);
-  after(() => emailPlayers(game.id, last ? { kind: "over" } : { kind: "round", position: gs.position }));
+  // One email at the end with the full results (no email after every song;
+  // the waiting screens update live instead).
+  if (last) after(() => emailPlayers(game.id, { kind: "over" }));
 }
 
 /** Total points from completed songs, best first. */
@@ -440,7 +442,7 @@ export async function afterPlayerRemoved(gameIds: string[]): Promise<void> {
 // Email
 // ---------------------------------------------------------------------------
 
-type GameEmail = { kind: "start" } | { kind: "round"; position: number } | { kind: "over" };
+type GameEmail = { kind: "start" } | { kind: "over" };
 
 /** Email every player in a game, each with their own login button to the game. */
 async function emailPlayers(gameId: string, what: GameEmail): Promise<void> {
@@ -452,7 +454,10 @@ async function emailPlayers(gameId: string, what: GameEmail): Promise<void> {
       .from(gamePlayers)
       .innerJoin(users, eq(users.id, gamePlayers.userId))
       .where(eq(gamePlayers.gameId, gameId));
-    const table = what.kind === "over" ? await standings(gameId) : [];
+    // game-view imports from this module, so load it lazily to avoid a cycle.
+    const results =
+      what.kind === "over" ? (await (await import("./game-view")).loadGameResults([gameId])).get(gameId) : undefined;
+    if (what.kind === "over" && !results) return;
 
     for (const p of players) {
       try {
@@ -461,9 +466,7 @@ async function emailPlayers(gameId: string, what: GameEmail): Promise<void> {
         const email =
           what.kind === "start"
             ? gameOnEmail(p.name, url, { songCount: game.songCount, others })
-            : what.kind === "round"
-              ? roundDoneEmail(p.name, url, { position: what.position, total: game.songCount })
-              : gameOverEmail(p.name, url, table);
+            : gameOverEmail(p.name, p.id, url, results!);
         await sendEmail({ to: p.email, ...email });
       } catch (err) {
         console.error(`Game email (${what.kind}) to ${p.email} failed`, err);
