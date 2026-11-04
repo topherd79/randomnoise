@@ -12,7 +12,9 @@ https://claude.ai/artifact/H477Nc2h2RAwzVDDH8VHva — read it before changing ga
 
 The admin uploads songs (full mp3s) into a running catalog. A game draws 5/10/15/20/25 unplayed songs
 at random (only songs switched on in the catalog); the admin can choose "Include songs from earlier games",
-which tops up with songs played longest ago (`songPool` in `createGame`). For each song, a player taps Play: a short clip and the answer clock start together, four
+which tops up with songs played longest ago (`songPool` in `createGame`). Optional filters (decades, genres,
+artists; `src/lib/song-filters.ts`) narrow the draw: any option within a filter, all filters together;
+wrong answers then come from the filtered set when it has enough songs. For each song, a player taps Play: a short clip and the answer clock start together, four
 "Title – Artist" choices (1 right, 3 random other catalog songs) reveal letter by letter and finish
 together, and a faster correct answer scores more (1,000 sliding to 100; a wrong answer loses a third
 of what a right one would have earned, so guessing is worth zero on average). Players

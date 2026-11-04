@@ -2,6 +2,7 @@ import "server-only";
 import { and, count, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { gameSongs, songs } from "@/db/schema";
+import type { SongMeta } from "./song-filters";
 
 /**
  * Songs that count as used: drawn into any game, except songs from a
@@ -35,4 +36,21 @@ export async function catalogCounts(): Promise<{ total: number; active: number; 
       .where(and(eq(songs.active, true), sql`${songs.id} not in ${usedSongIdsSql}`)),
   ]);
   return { total, active, unplayed };
+}
+
+/**
+ * Artist, year, genre and played-or-not for every switched-on song, for the
+ * game form's filters and live counts. Deliberately no titles.
+ */
+export async function activeSongMeta(): Promise<SongMeta[]> {
+  const rows = await db
+    .select({
+      artist: songs.artist,
+      year: songs.year,
+      genre: songs.genre,
+      played: sql<boolean>`${songs.id} in ${usedSongIdsSql}`,
+    })
+    .from(songs)
+    .where(eq(songs.active, true));
+  return rows.map((r) => ({ ...r, played: Boolean(r.played) }));
 }

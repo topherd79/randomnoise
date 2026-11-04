@@ -3,7 +3,7 @@ import { asc } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
-import { catalogCounts } from "@/lib/catalog-queries";
+import { activeSongMeta } from "@/lib/catalog-queries";
 import { gameSummaries } from "@/lib/admin-games";
 import { formatPoints } from "@/lib/rules";
 import { CreateGameForm } from "./CreateGameForm";
@@ -18,9 +18,9 @@ function names(list: string[]): string {
 
 export default async function GamesPage() {
   const me = await requireAdmin();
-  const [players, counts, summaries] = await Promise.all([
+  const [players, songMeta, summaries] = await Promise.all([
     db.select({ id: users.id, name: users.name }).from(users).orderBy(asc(users.name)),
-    catalogCounts(),
+    activeSongMeta(),
     gameSummaries(),
   ]);
   // Song-by-song results for games that are over (never for one in progress: the admin plays too).
@@ -98,8 +98,7 @@ export default async function GamesPage() {
         <h2 className="mb-4 text-lg font-bold">Start a game</h2>
         <CreateGameForm
           players={players.map((p) => ({ id: p.id, name: p.name, isMe: p.id === me.id }))}
-          unplayed={counts.unplayed}
-          catalogSize={counts.active}
+          songs={songMeta}
         />
       </aside>
     </div>

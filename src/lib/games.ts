@@ -17,6 +17,7 @@ import {
 } from "@/db/schema";
 import { cutClip, probe } from "./audio";
 import { publishGameUpdate } from "./live";
+import { filterKey, hasFilters, matchesFilters, NO_FILTERS, type SongFilters } from "./song-filters";
 import { createLoginUrl } from "./auth";
 import { usedSongIdsSql } from "./catalog-queries";
 import { pickClipStart } from "./clips";
@@ -95,15 +96,31 @@ export function pickWrongAnswers(
  */
 export type SongPool = "new" | "mix";
 
+/** Same normalization as filterKey() in song-filters.ts, in SQL. */
+const filterKeySql = (col: typeof songs.artist | typeof songs.genre) =>
+  sql`lower(regexp_replace(trim(${col}), '\\s+', ' ', 'g'))`;
+
+/** SQL conditions for the game form's filters (any option within a filter, every filter). */
+function filterConditions(f: SongFilters) {
+  const conds = [];
+  if (f.decades.length) conds.push(inArray(sql`(${songs.year} / 10) * 10`, f.decades));
+  if (f.genres.length) conds.push(inArray(filterKeySql(songs.genre), f.genres.map(filterKey)));
+  if (f.artists.length) conds.push(inArray(filterKeySql(songs.artist), f.artists.map(filterKey)));
+  return conds;
+}
+
 export async function createGame(opts: {
   playerIds: string[];
   songCount: number;
   clipLengthSec: number;
   wrongAnswers: WrongAnswerMode;
   songPool?: SongPool;
+  filters?: SongFilters;
   createdBy: string;
 }): Promise<Result<{ gameId: string }>> {
-  const { playerIds, songCount, clipLengthSec, wrongAnswers, songPool = "new", createdBy } = opts;
+  const { playerIds, songCount, clipLengthSec, wrongAnswers, songPool = "new", filters = NO_FILTERS, createdBy } = opts;
+  const filtered = hasFilters(filters);
+  const matching = filterConditions(filters);
 
   const players = await db.select({ id: users.id }).from(users).where(inArray(users.id, playerIds));
   if (players.length !== playerIds.length) return { ok: false, error: "One of those players no longer exists." };
@@ -112,7 +129,7 @@ export async function createGame(opts: {
   const fresh = await db
     .select()
     .from(songs)
-    .where(and(eq(songs.active, true), sql`${songs.id} not in ${usedSongIdsSql}`))
+    .where(and(eq(songs.active, true), sql`${songs.id} not in ${usedSongIdsSql}`, ...matching))
     .orderBy(sql`random()`)
     .limit(songCount);
   let drawn = fresh;
@@ -122,7 +139,7 @@ export async function createGame(opts: {
     const repeats = await db
       .select()
       .from(songs)
-      .where(and(eq(songs.active, true), sql`${songs.id} in ${usedSongIdsSql}`))
+      .where(and(eq(songs.active, true), sql`${songs.id} in ${usedSongIdsSql}`, ...matching))
       .orderBy(
         sql`(select max(g.created_at) from game_songs gs join games g on g.id = gs.game_id where gs.song_id = ${songs.id}) asc nulls first`,
         sql`random()`,
@@ -131,18 +148,22 @@ export async function createGame(opts: {
     drawn = shuffle([...fresh, ...repeats], Math.random);
   }
   if (drawn.length < songCount) {
+    const which = filtered ? " that match these filters" : "";
     return {
       ok: false,
       error:
         songPool === "mix"
-          ? `There are only ${drawn.length} switched-on songs in the catalog. Add or turn on ${songCount - drawn.length} more, or pick a shorter game.`
-          : `There are only ${drawn.length} new songs (switched on, not played yet). Include songs from earlier games, add or turn on ${songCount - drawn.length} more, or pick a shorter game.`,
+          ? `There are only ${drawn.length} switched-on songs${which}. ${filtered ? "Loosen the filters" : "Add or turn on more songs"}, or pick a shorter game.`
+          : `There are only ${drawn.length} new songs${which} (switched on, not played yet). Include songs from earlier games, ${filtered ? "loosen the filters" : "add or turn on more songs"}, or pick a shorter game.`,
     };
   }
   const pool = await db
     .select({ id: songs.id, title: songs.title, artist: songs.artist, year: songs.year, genre: songs.genre })
     .from(songs)
     .where(eq(songs.active, true));
+  // Wrong answers come from the same filtered set when it's big enough (a Queen-only
+  // game gets Queen songs as wrong answers), otherwise from the whole catalog.
+  const filteredPool = filtered ? pool.filter((c) => matchesFilters(c, filters)) : pool;
   const inThisGame = new Set(drawn.map((s) => s.id));
 
   await ensureFolder("clips");
@@ -150,7 +171,8 @@ export async function createGame(opts: {
   try {
     const rows: (typeof gameSongs.$inferInsert)[] = [];
     for (const [i, song] of drawn.entries()) {
-      const wrong = pickWrongAnswers(song, pool, inThisGame, wrongAnswers);
+      let wrong = pickWrongAnswers(song, filteredPool, inThisGame, wrongAnswers);
+      if (wrong.length < 3) wrong = pickWrongAnswers(song, pool, inThisGame, wrongAnswers);
       if (wrong.length < 3) {
         return { ok: false, error: "The catalog needs at least 4 different songs to make wrong answers." };
       }
