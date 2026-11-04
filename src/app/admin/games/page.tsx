@@ -67,7 +67,7 @@ export default async function GamesPage() {
         <CreateGameForm
           players={players.map((p) => ({ id: p.id, name: p.name, isMe: p.id === me.id }))}
           unplayed={counts.unplayed}
-          catalogSize={counts.total}
+          catalogSize={counts.active}
         />
       </aside>
     </div>

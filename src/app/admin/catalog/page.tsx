@@ -16,6 +16,7 @@ export default async function CatalogPage() {
         id: songs.id,
         title: songs.title,
         artist: songs.artist,
+        album: songs.album,
         year: songs.year,
         genre: songs.genre,
         artworkUrl: songs.artworkUrl,
@@ -26,6 +27,7 @@ export default async function CatalogPage() {
         customClipFile: songs.customClipFile,
         lookupStatus: songs.lookupStatus,
         needsReview: songs.needsReview,
+        active: songs.active,
       })
       .from(songs)
       .orderBy(desc(songs.createdAt)),
@@ -36,6 +38,7 @@ export default async function CatalogPage() {
     id: r.id,
     title: r.title,
     artist: r.artist,
+    album: r.album,
     year: r.year,
     genre: r.genre,
     artworkUrl: r.artworkUrl,
@@ -51,6 +54,7 @@ export default async function CatalogPage() {
     clipLengthSec: r.clipLengthSec,
     lookupStatus: r.lookupStatus,
     needsReview: r.needsReview,
+    active: r.active,
   }));
   const pending = rows.filter((r) => r.lookupStatus === "pending").length;
   const review = rows.filter((r) => r.needsReview).length;
@@ -61,9 +65,10 @@ export default async function CatalogPage() {
         <div>
           <h1 className="text-2xl font-bold">Catalog</h1>
           <p className="mt-1 text-muted">
-            {counts.total} {counts.total === 1 ? "song" : "songs"} ·{" "}
-            <span className="text-ink">{counts.unplayed} not played yet</span>. Each new game draws from the
-            songs no game has used.
+            {counts.total} {counts.total === 1 ? "song" : "songs"}
+            {counts.total > counts.active && ` (${counts.total - counts.active} left out of games)`} ·{" "}
+            <span className="text-ink">{counts.unplayed} not played yet</span>. New games draw from the
+            switched-on songs no game has used, unless you choose to include songs from earlier games.
           </p>
         </div>
         {review > 0 && (

@@ -4,13 +4,14 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { songs } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
-import { formatTime } from "@/lib/clips";
+import { CLIP_LENGTHS, formatTime } from "@/lib/clips";
 import { appleMusicLink, spotifyLink } from "@/lib/links";
 import { Artwork } from "../SongTable";
 import { DetailsForm } from "./DetailsForm";
 import { ClipEditor } from "./ClipEditor";
 import { CustomClipPanel } from "./CustomClipPanel";
 import { DeleteSong } from "./DeleteSong";
+import { ActiveSwitch } from "../ActiveSwitch";
 
 export default async function SongPage(props: PageProps<"/admin/catalog/[id]">) {
   await requireAdmin();
@@ -42,6 +43,9 @@ export default async function SongPage(props: PageProps<"/admin/catalog/[id]">) 
             </a>
             <span className="text-muted">File: {song.originalFileName}</span>
           </p>
+          <div className="mt-4">
+            <ActiveSwitch id={song.id} active={song.active} title={song.title} withLabel />
+          </div>
         </div>
       </header>
 
@@ -50,8 +54,8 @@ export default async function SongPage(props: PageProps<"/admin/catalog/[id]">) 
           <div>
             <h2 className="text-xl font-bold">Clip</h2>
             <p className="mt-1 text-sm text-muted">
-              Which part of the song players hear. The clip length is set when you create a game (5, 10 or 15
-              seconds) unless you override it here.
+              Which part of the song players hear. The clip length is set when you create a game ({CLIP_LENGTHS.slice(0, -1).join(", ")} or{" "}
+              {CLIP_LENGTHS.at(-1)} seconds) unless you override it here.
             </p>
             {song.customClipFile ? (
               <p className="mt-4 rounded-xl bg-surface p-4 text-sm text-muted">

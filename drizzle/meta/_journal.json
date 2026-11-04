@@ -22,6 +22,20 @@
       "when": 1793697377450,
       "tag": "0002_games",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793759991928,
+      "tag": "0003_song_active",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793760090716,
+      "tag": "0004_clip_length_15_to_20",
+      "breakpoints": true
     }
   ]
 }

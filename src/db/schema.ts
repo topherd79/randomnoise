@@ -111,6 +111,13 @@ export const songs = pgTable(
     /** Admin-uploaded clip used instead of cutting one (file name inside the custom-clips folder). */
     customClipFile: text("custom_clip_file"),
 
+    /**
+     * Inactive songs stay in the catalog but new games leave them out entirely:
+     * they're never drawn and never used as a wrong answer. Games already
+     * created keep the songs and choices they were made with.
+     */
+    active: boolean("active").notNull().default(true),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
