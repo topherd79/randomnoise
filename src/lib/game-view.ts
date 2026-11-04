@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
-import { answers, gamePlayers, gameSongs, games, songs, users, type Choice } from "@/db/schema";
+import { answers, gamePlayers, gameSongs, games, songs, users, type Choice, type SongSnapshot } from "@/db/schema";
 import { appleMusicLink, spotifyLink } from "./links";
 import { choiceLabel, shuffleFor } from "./rules";
 import { standings, type Standing } from "./games";
@@ -14,7 +14,8 @@ export type SongInfo = {
   artworkUrl: string | null;
   appleMusicUrl: string;
   spotifyUrl: string;
-  fullUrl: string;
+  /** Null once the song has been deleted from the catalog (its file is gone). */
+  fullUrl: string | null;
 };
 
 export type MyAnswer = {
@@ -64,10 +65,8 @@ export type GameView = {
   standings: Standing[];
 };
 
-function songInfo(
-  s: { title: string; artist: string; album: string | null; year: number | null; artworkUrl: string | null; appleMusicUrl: string | null; spotifyUrl: string | null },
-  gameSongId: string,
-): SongInfo {
+/** What players see about a song, from the game's snapshot (not the live catalog). */
+function songInfo(s: SongSnapshot, gameSongId: string, stillInCatalog: boolean): SongInfo {
   return {
     title: s.title,
     artist: s.artist,
@@ -76,7 +75,7 @@ function songInfo(
     artworkUrl: s.artworkUrl,
     appleMusicUrl: appleMusicLink(s),
     spotifyUrl: spotifyLink(s),
-    fullUrl: `/api/game-songs/${gameSongId}/full`,
+    fullUrl: stillInCatalog ? `/api/game-songs/${gameSongId}/full` : null,
   };
 }
 
@@ -99,9 +98,11 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
       .where(eq(gamePlayers.gameId, gameId))
       .orderBy(asc(users.name)),
     db
-      .select({ gs: gameSongs, song: songs })
+      // Song details come from the snapshot; the join only tells us whether the
+      // catalog song (and so its full-length file) still exists.
+      .select({ gs: gameSongs, inCatalog: songs.id })
       .from(gameSongs)
-      .innerJoin(songs, eq(songs.id, gameSongs.songId))
+      .leftJoin(songs, eq(songs.id, gameSongs.songId))
       .where(eq(gameSongs.gameId, gameId))
       .orderBy(asc(gameSongs.position)),
     standings(gameId),
@@ -130,7 +131,7 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
       };
     });
     picks.sort((x, y) => (y.points ?? -Infinity) - (x.points ?? -Infinity) || x.name.localeCompare(y.name));
-    return { position: r.gs.position, song: songInfo(r.song, r.gs.id), picks };
+    return { position: r.gs.position, song: songInfo(r.gs.song, r.gs.id, Boolean(r.inCatalog)), picks };
   };
 
   let current: RoundView | null = null;
@@ -157,7 +158,7 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
       waitingOn: players
         .filter((p) => !allAnswers.some((a) => a.gameSongId === cur.gs.id && a.userId === p.userId && a.answeredAt))
         .map((p) => ({ userId: p.userId, name: nameOf.get(p.userId) ?? p.name })),
-      song: answered ? songInfo(cur.song, cur.gs.id) : null,
+      song: answered ? songInfo(cur.gs.song, cur.gs.id, Boolean(cur.inCatalog)) : null,
       rightSongId: answered ? cur.gs.songId : null,
     };
   }
@@ -259,9 +260,8 @@ export async function loadGameResults(gameIds: string[]): Promise<Map<string, Ga
       .innerJoin(users, eq(users.id, gamePlayers.userId))
       .where(inArray(gamePlayers.gameId, gameIds)),
     db
-      .select({ gs: gameSongs, song: songs })
+      .select({ gs: gameSongs })
       .from(gameSongs)
-      .innerJoin(songs, eq(songs.id, gameSongs.songId))
       .where(and(inArray(gameSongs.gameId, gameIds), isNotNull(gameSongs.completedAt)))
       .orderBy(asc(gameSongs.position)),
   ]);
@@ -293,7 +293,7 @@ export async function loadGameResults(gameIds: string[]): Promise<Map<string, Ga
           elapsedMs: a?.elapsedMs ?? null,
         };
       });
-      const { fullUrl: _full, ...info } = songInfo(r.song, r.gs.id);
+      const { fullUrl: _full, ...info } = songInfo(r.gs.song, r.gs.id, false);
       void _full;
       return { ...info, position: r.gs.position, picks };
     });

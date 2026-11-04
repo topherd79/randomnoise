@@ -36,6 +36,13 @@
       "when": 1793760090716,
       "tag": "0004_clip_length_15_to_20",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793819131944,
+      "tag": "0005_game_song_snapshot",
+      "breakpoints": true
     }
   ]
 }

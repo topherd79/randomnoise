@@ -32,7 +32,8 @@ export function SongCard({ song, withAudio = true }: { song: SongInfo; withAudio
           )}
         </div>
       </div>
-      {withAudio && <audio controls preload="none" src={song.fullUrl} className="mt-4 w-full" />}
+      {/* No player once the song has been deleted from the catalog; the links still work. */}
+      {withAudio && song.fullUrl && <audio controls preload="none" src={song.fullUrl} className="mt-4 w-full" />}
       <div className="mt-3 grid grid-cols-2 gap-2 text-sm font-semibold">
         <a href={song.spotifyUrl} target="_blank" rel="noreferrer" className="rounded-full bg-surface-2 py-2.5 text-center text-ink">
           Spotify

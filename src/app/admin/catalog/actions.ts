@@ -10,7 +10,6 @@ import { requireAdmin } from "@/lib/auth";
 import { runLookup } from "@/lib/catalog";
 import { CLIP_LENGTHS } from "@/lib/clips";
 import { removeFile } from "@/lib/storage";
-import { songDrawnIntoGame } from "@/lib/catalog-queries";
 
 // Every action here re-checks the admin: server actions are public endpoints.
 
@@ -174,11 +173,9 @@ export async function deleteSong(id: string): Promise<FormResult> {
   await requireAdmin();
   const [song] = await db.select().from(songs).where(eq(songs.id, id)).limit(1);
   if (!song) redirect("/admin/catalog");
-  // Deliberately vague: saying "it's in the game in progress" would tell the
-  // admin (who also plays) which songs are coming up.
-  if (await songDrawnIntoGame(id)) {
-    return { ok: false, message: "Songs that have been drawn into a game can't be deleted." };
-  }
+  // Games keep a snapshot of every song they used and their clips are cut
+  // already, so deleting is safe even for songs that have been played (or are
+  // in a game still being played). Only the full-song player disappears.
   await db.delete(songs).where(eq(songs.id, id));
   await Promise.all([removeFile("songs", song.fileName), removeFile("custom-clips", song.customClipFile)]);
   revalidatePath("/admin/catalog");

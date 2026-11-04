@@ -138,6 +138,22 @@ export type WrongAnswerMode = "random" | "similar";
 /** One answer choice, frozen when the game is created ("Title – Artist" never changes mid-game). */
 export type Choice = { songId: string; title: string; artist: string };
 
+/**
+ * The song's details as they were when the game was created. Results, the
+ * history grid and the results email read this, so a game's history stays
+ * intact even if the song is later edited or deleted from the catalog.
+ */
+export type SongSnapshot = {
+  title: string;
+  artist: string;
+  album: string | null;
+  year: number | null;
+  genre: string | null;
+  artworkUrl: string | null;
+  appleMusicUrl: string | null;
+  spotifyUrl: string | null;
+};
+
 export const games = pgTable("games", {
   id: uuid("id").primaryKey().defaultRandom(),
   status: text("status").$type<GameStatus>().notNull().default("active"),
@@ -173,10 +189,17 @@ export const gameSongs = pgTable(
       .notNull()
       .references(() => games.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
-    songId: uuid("song_id")
-      .notNull()
-      .references(() => songs.id, { onDelete: "restrict" }),
-    /** Random file name in the clips folder, so the URL gives nothing away. */
+    /**
+     * The catalog song this was. Deliberately not a foreign key: the song can be
+     * deleted later and the game keeps working (scoring compares choice ids, and
+     * everything shown comes from the snapshot below).
+     */
+    songId: uuid("song_id").notNull(),
+    song: jsonb("song").$type<SongSnapshot>().notNull(),
+    /**
+     * Random file name in the clips folder, so the URL gives nothing away. The
+     * file is deleted once everyone has answered (or the game ends early).
+     */
     clipFile: text("clip_file").notNull(),
     clipStartSec: real("clip_start_sec").notNull(),
     clipLengthSec: real("clip_length_sec").notNull(),
