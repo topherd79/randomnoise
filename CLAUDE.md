@@ -74,6 +74,13 @@ songs of a game in progress.
   only, no game data) to `<LiveRefresh>`, which calls `router.refresh()`; it holds off while music is
   playing and falls back to 20 s polling if the feed is closed or silent (heartbeat every 25 s).
   Mount it only on screens where nobody is mid-song. New code that changes game state must publish.
+- **Game history is a snapshot:** each `game_songs` row keeps a copy of the song's details (`song`
+  jsonb) and `song_id` has no foreign key, so catalog songs can be deleted (or edited) without
+  touching past or running games. Read song details from `gs.song`, never by joining `songs`
+  (join only to check the full-length file still exists).
+- **Clips are temporary:** a clip file is deleted once everyone has answered its song
+  (`completeRoundIfDone`) or its game ends early (`cancelGame`); `scripts/cleanup-clips.mjs`
+  sweeps leftovers on every start.
 - **Admin screens never show the songs of a game in progress** (the admin plays too): see
   `src/lib/admin-games.ts`. Clips have random file names, are only served to players in that game
   and never ahead of the current song; the full song unlocks only after a player answers.

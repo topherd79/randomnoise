@@ -1,7 +1,7 @@
 import "server-only";
 import { and, count, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { gameSongs, songs } from "@/db/schema";
+import { songs } from "@/db/schema";
 import type { SongMeta } from "./song-filters";
 
 /**
@@ -15,12 +15,6 @@ export const usedSongIdsSql = sql`(
      or gs.completed_at is not null
      or exists (select 1 from answers a where a.game_song_id = gs.id)
 )`;
-
-/** Whether a song has been drawn into any game (such songs can't be deleted). */
-export async function songDrawnIntoGame(songId: string): Promise<boolean> {
-  const [row] = await db.select({ id: gameSongs.id }).from(gameSongs).where(eq(gameSongs.songId, songId)).limit(1);
-  return Boolean(row);
-}
 
 /**
  * Songs in the catalog, how many are active (inactive songs are left out of new

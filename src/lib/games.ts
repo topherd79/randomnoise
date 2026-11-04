@@ -13,6 +13,7 @@ import {
   songs,
   users,
   type Choice,
+  type SongSnapshot,
   type WrongAnswerMode,
 } from "@/db/schema";
 import { cutClip, probe } from "./audio";
@@ -193,7 +194,18 @@ export async function createGame(opts: {
       made.push(clipFile);
 
       const choices: Choice[] = [song, ...wrong].map((c) => ({ songId: c.id, title: c.title, artist: c.artist }));
-      rows.push({ gameId: "", position: i + 1, songId: song.id, clipFile, clipStartSec: start, clipLengthSec: length, choices });
+      // A snapshot of the song, so this game's history survives later edits or deletion.
+      const snapshot: SongSnapshot = {
+        title: song.title,
+        artist: song.artist,
+        album: song.album,
+        year: song.year,
+        genre: song.genre,
+        artworkUrl: song.artworkUrl,
+        appleMusicUrl: song.appleMusicUrl,
+        spotifyUrl: song.spotifyUrl,
+      };
+      rows.push({ gameId: "", position: i + 1, songId: song.id, song: snapshot, clipFile, clipStartSec: start, clipLengthSec: length, choices });
     }
 
     const gameId = await db.transaction(async (tx) => {
@@ -340,6 +352,9 @@ export async function completeRoundIfDone(gameSongId: string): Promise<void> {
     .returning({ id: gameSongs.id });
   if (!done.length) return;
 
+  // Everyone has heard this clip and nobody can play it again: free the space.
+  await removeFile("clips", gs.clipFile).catch((err) => console.error("Couldn't delete clip", gs.clipFile, err));
+
   const last = gs.position >= game.songCount;
   await db
     .update(games)
@@ -433,10 +448,16 @@ export async function resetAttempt(gameSongId: string, userId: string): Promise<
 }
 
 export async function cancelGame(gameId: string): Promise<void> {
-  await db
+  const ended = await db
     .update(games)
     .set({ status: "cancelled", finishedAt: new Date() })
-    .where(and(eq(games.id, gameId), eq(games.status, "active")));
+    .where(and(eq(games.id, gameId), eq(games.status, "active")))
+    .returning({ id: games.id });
+  if (ended.length) {
+    // The game is over, so none of its clips will be played again.
+    const clips = await db.select({ file: gameSongs.clipFile }).from(gameSongs).where(eq(gameSongs.gameId, gameId));
+    await Promise.all(clips.map((c) => removeFile("clips", c.file).catch(() => {})));
+  }
   await publishGameUpdate(gameId);
 }
 
