@@ -82,8 +82,8 @@ export function CreateGameForm({ players, unplayed, catalogSize }: { players: Pl
           ))}
         </div>
         <p className="mt-2 text-xs text-muted">
-          {unplayed} unplayed {unplayed === 1 ? "song" : "songs"} in the catalog.
-          {unplayed < 25 && ` Add ${25 - unplayed} more for a 25-song game.`}
+          {unplayed} active, unplayed {unplayed === 1 ? "song" : "songs"} in the catalog.
+          {unplayed < 25 && ` Add or turn on ${25 - unplayed} more for a 25-song game.`}
         </p>
       </fieldset>
 
@@ -119,7 +119,7 @@ export function CreateGameForm({ players, unplayed, catalogSize }: { players: Pl
       <SubmitButton pendingText="Cutting clips…" className={canCreate ? "" : "pointer-events-none opacity-40"}>
         Start the game
       </SubmitButton>
-      {catalogSize < 4 && <p className="text-sm text-danger">Add at least 4 songs to the catalog first.</p>}
+      {catalogSize < 4 && <p className="text-sm text-danger">You need at least 4 active songs in the catalog first.</p>}
       <p className="-mt-3 text-xs text-muted">Players get a “Game on” email with a login button.</p>
       {result && !result.ok && <p className="text-sm text-danger">{result.message}</p>}
     </form>

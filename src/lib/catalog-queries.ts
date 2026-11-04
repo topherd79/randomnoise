@@ -1,5 +1,5 @@
 import "server-only";
-import { count, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { gameSongs, songs } from "@/db/schema";
 
@@ -21,14 +21,18 @@ export async function songDrawnIntoGame(songId: string): Promise<boolean> {
   return Boolean(row);
 }
 
-/** Songs in the catalog, and how many no game has used yet. */
-export async function catalogCounts(): Promise<{ total: number; unplayed: number }> {
-  const [[{ total }], [{ unplayed }]] = await Promise.all([
+/**
+ * Songs in the catalog, how many are active (inactive songs are left out of new
+ * games), and how many active songs no game has used yet.
+ */
+export async function catalogCounts(): Promise<{ total: number; active: number; unplayed: number }> {
+  const [[{ total }], [{ active }], [{ unplayed }]] = await Promise.all([
     db.select({ total: count() }).from(songs),
+    db.select({ active: count() }).from(songs).where(eq(songs.active, true)),
     db
       .select({ unplayed: count() })
       .from(songs)
-      .where(sql`${songs.id} not in ${usedSongIdsSql}`),
+      .where(and(eq(songs.active, true), sql`${songs.id} not in ${usedSongIdsSql}`)),
   ]);
-  return { total, unplayed };
+  return { total, active, unplayed };
 }

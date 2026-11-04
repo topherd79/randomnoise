@@ -99,21 +99,23 @@ export async function createGame(opts: {
   const players = await db.select({ id: users.id }).from(users).where(inArray(users.id, playerIds));
   if (players.length !== playerIds.length) return { ok: false, error: "One of those players no longer exists." };
 
+  // Inactive songs are left out entirely: never drawn, never a wrong answer.
   const drawn = await db
     .select()
     .from(songs)
-    .where(sql`${songs.id} not in ${usedSongIdsSql}`)
+    .where(and(eq(songs.active, true), sql`${songs.id} not in ${usedSongIdsSql}`))
     .orderBy(sql`random()`)
     .limit(songCount);
   if (drawn.length < songCount) {
     return {
       ok: false,
-      error: `There are only ${drawn.length} unplayed songs. Add ${songCount - drawn.length} more, or pick a shorter game.`,
+      error: `There are only ${drawn.length} active, unplayed songs. Add or turn on ${songCount - drawn.length} more, or pick a shorter game.`,
     };
   }
   const pool = await db
     .select({ id: songs.id, title: songs.title, artist: songs.artist, year: songs.year, genre: songs.genre })
-    .from(songs);
+    .from(songs)
+    .where(eq(songs.active, true));
   const inThisGame = new Set(drawn.map((s) => s.id));
 
   await ensureFolder("clips");

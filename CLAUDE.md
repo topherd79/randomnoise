@@ -11,7 +11,7 @@ https://claude.ai/artifact/H477Nc2h2RAwzVDDH8VHva — read it before changing ga
 ## The game in one paragraph
 
 The admin uploads songs (full mp3s) into a running catalog. A game draws 5/10/15/20/25 unplayed songs
-at random. For each song, a player taps Play: a short clip and the answer clock start together, four
+at random (only songs switched on in the catalog). For each song, a player taps Play: a short clip and the answer clock start together, four
 "Title – Artist" choices (1 right, 3 random other catalog songs) reveal letter by letter and finish
 together, and a faster correct answer scores more (1,000 sliding to 100; a wrong answer loses a third
 of what a right one would have earned, so guessing is worth zero on average). Players
@@ -63,6 +63,9 @@ songs of a game in progress.
 - **Game rules and numbers** (reveal time, cutoff, points, guessing penalty) are all in
   `src/lib/rules.ts`. The server keeps the clock (`answers.started_at` is set when the clip actually
   starts playing) and scores every answer; the phone is never told which choice is right.
+- **Switched-off songs** (`songs.active = false`) stay in the catalog but new games leave them out
+  entirely: never drawn, never a wrong answer (`createGame` in `src/lib/games.ts`). Games already
+  created are unaffected. Clip lengths are `CLIP_LENGTHS` in `src/lib/clips.ts` (5/10/20/30 s).
 - **Admin screens never show the songs of a game in progress** (the admin plays too): see
   `src/lib/admin-games.ts`. Clips have random file names, are only served to players in that game
   and never ahead of the current song; the full song unlocks only after a player answers.

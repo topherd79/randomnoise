@@ -1,7 +1,7 @@
 // Shared by the server (cutting clips when a game is created) and the admin
 // clip editor (previewing a "surprise me" pick). No server-only imports here.
 
-export const CLIP_LENGTHS = [5, 10, 15] as const;
+export const CLIP_LENGTHS = [5, 10, 20, 30] as const;
 export type ClipLength = (typeof CLIP_LENGTHS)[number];
 
 type ClipSource = {

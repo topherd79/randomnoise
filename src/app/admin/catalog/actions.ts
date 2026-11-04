@@ -91,7 +91,10 @@ export async function updateSongDetails(_prev: FormResult, formData: FormData): 
 const clipSchema = z.object({
   mode: z.enum(["surprise", "start", "spots"]),
   spots: z.array(z.number().min(0)).max(20),
-  lengthSec: z.union([z.null(), z.literal(CLIP_LENGTHS[0]), z.literal(CLIP_LENGTHS[1]), z.literal(CLIP_LENGTHS[2])]),
+  lengthSec: z
+    .number()
+    .refine((n) => (CLIP_LENGTHS as readonly number[]).includes(n))
+    .nullable(),
 });
 
 export async function saveClipSettings(
@@ -119,6 +122,26 @@ export async function saveClipSettings(
   revalidatePath("/admin/catalog");
   revalidatePath(`/admin/catalog/${id}`);
   return { ok: true, message: "Clip setting saved." };
+}
+
+/**
+ * Turn a song on or off for new games. Off means it's never drawn and never
+ * used as a wrong answer; games already created are unaffected (and saying
+ * otherwise would hint at which songs are in the game in progress).
+ */
+export async function setSongActive(id: string, active: boolean): Promise<FormResult> {
+  await requireAdmin();
+  if (typeof active !== "boolean") return { ok: false, message: "That setting doesn't look right." };
+  const updated = await db
+    .update(songs)
+    .set({ active, updatedAt: new Date() })
+    .where(eq(songs.id, id))
+    .returning({ id: songs.id });
+  if (!updated.length) return { ok: false, message: "That song no longer exists." };
+  revalidatePath("/admin/catalog");
+  revalidatePath(`/admin/catalog/${id}`);
+  revalidatePath("/admin/games");
+  return { ok: true, message: active ? "On: new games can use it." : "Off: new games leave it out." };
 }
 
 export async function removeCustomClip(id: string): Promise<FormResult> {
