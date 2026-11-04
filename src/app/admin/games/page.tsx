@@ -7,6 +7,7 @@ import { catalogCounts } from "@/lib/catalog-queries";
 import { gameSummaries } from "@/lib/admin-games";
 import { formatPoints } from "@/lib/rules";
 import { CreateGameForm } from "./CreateGameForm";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 function names(list: string[]): string {
   if (list.length <= 1) return list.join("");
@@ -28,6 +29,7 @@ export default async function GamesPage() {
         <p className="mt-1 text-muted">
           Progress only: this page never shows the songs of a game in progress, so you can play too.
         </p>
+        <LiveRefresh gameIds={summaries.filter((g) => g.status === "active").map((g) => g.id)} />
         {summaries.length === 0 ? (
           <p className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-muted">
             No games yet. Start one on the right.

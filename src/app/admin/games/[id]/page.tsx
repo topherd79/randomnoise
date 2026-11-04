@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { gameProgress } from "@/lib/admin-games";
 import { formatPoints } from "@/lib/rules";
 import { GameControls, ResetButton } from "./GameControls";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 function since(d: Date) {
   const min = Math.round((Date.now() - d.getTime()) / 60000);
@@ -24,6 +25,7 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
 
   return (
     <div className="flex flex-col gap-8">
+      {active && <LiveRefresh gameIds={[game.id]} />}
       <Link href="/admin/games" className="text-sm text-muted hover:text-ink">
         ← Games
       </Link>

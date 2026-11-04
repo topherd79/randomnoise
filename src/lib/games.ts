@@ -16,6 +16,7 @@ import {
   type WrongAnswerMode,
 } from "@/db/schema";
 import { cutClip, probe } from "./audio";
+import { publishGameUpdate } from "./live";
 import { createLoginUrl } from "./auth";
 import { usedSongIdsSql } from "./catalog-queries";
 import { pickClipStart } from "./clips";
@@ -280,6 +281,8 @@ export async function answerSong(
   if (!saved.length) return answerSong(userId, gameSongId, choiceSongId); // a double tap: return the first answer
 
   await completeRoundIfDone(gs.id);
+  // Others waiting on this song see "waiting on" shrink (or the results) without refreshing.
+  await publishGameUpdate(game.id);
   return { ok: true, result: { correct, points, elapsedMs, rightSongId: gs.songId, choiceSongId } };
 }
 
@@ -320,6 +323,7 @@ export async function completeRoundIfDone(gameSongId: string): Promise<void> {
     .update(games)
     .set(last ? { status: "finished", finishedAt: new Date() } : { currentPosition: gs.position + 1 })
     .where(and(eq(games.id, game.id), eq(games.status, "active")));
+  await publishGameUpdate(game.id);
   after(() => emailPlayers(game.id, last ? { kind: "over" } : { kind: "round", position: gs.position }));
 }
 
@@ -400,6 +404,7 @@ export async function resetAttempt(gameSongId: string, userId: string): Promise<
   if (!gs) return { ok: false, error: "That song isn't in a game." };
   if (gs.completedAt) return { ok: false, error: "Everyone has answered this song, so it can't be reset." };
   await db.delete(answers).where(and(eq(answers.gameSongId, gameSongId), eq(answers.userId, userId)));
+  await publishGameUpdate(gs.gameId);
   return { ok: true };
 }
 
@@ -408,6 +413,7 @@ export async function cancelGame(gameId: string): Promise<void> {
     .update(games)
     .set({ status: "cancelled", finishedAt: new Date() })
     .where(and(eq(games.id, gameId), eq(games.status, "active")));
+  await publishGameUpdate(gameId);
 }
 
 /** After a player is removed, the songs they were holding up can move on. */
@@ -426,6 +432,7 @@ export async function afterPlayerRemoved(gameIds: string[]): Promise<void> {
       .where(and(eq(gameSongs.gameId, gameId), eq(gameSongs.position, game.currentPosition)))
       .limit(1);
     if (gs) await completeRoundIfDone(gs.id);
+    await publishGameUpdate(gameId); // the "waiting on" list changed
   }
 }
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { myGames } from "@/lib/game-view";
 import { Logo } from "@/components/Logo";
+import { LiveRefresh } from "@/components/LiveRefresh";
 import { SubmitButton } from "@/components/SubmitButton";
 import { logout } from "./actions";
 
@@ -35,6 +36,7 @@ export default async function Home() {
         </section>
       ) : (
         <section className="flex flex-1 flex-col justify-center gap-4 py-10">
+          <LiveRefresh gameIds={active.map((g) => g.id)} />
           <p className="text-muted">Hi {user.name},</p>
           {active.map((g) => {
             return (

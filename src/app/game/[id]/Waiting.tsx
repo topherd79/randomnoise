@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import { nudgeAction } from "../actions";
 
 function names(list: string[]): string {
@@ -11,7 +10,8 @@ function names(list: string[]): string {
 
 /**
  * Who still has to answer (never what anyone picked), with a nudge button for
- * each. Checks back every 20 seconds so the results show up on their own.
+ * each. The page around it updates live (LiveRefresh), so names drop off as
+ * people answer and the results show up on their own.
  */
 export function Waiting({
   gameSongId,
@@ -22,18 +22,9 @@ export function Waiting({
   me: string;
   waitingOn: { userId: string; name: string }[];
 }) {
-  const router = useRouter();
   const others = waitingOn.filter((w) => w.userId !== me);
   const [notes, setNotes] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [pending, startTransition] = useTransition();
-
-  useEffect(() => {
-    if (others.length === 0) return;
-    const id = setInterval(() => {
-      if (document.visibilityState === "visible") router.refresh();
-    }, 20_000);
-    return () => clearInterval(id);
-  }, [others.length, router]);
 
   if (others.length === 0) return null;
   return (

@@ -67,6 +67,11 @@ songs of a game in progress.
 - **Switched-off songs** (`songs.active = false`) stay in the catalog but new games leave them out
   entirely: never drawn, never a wrong answer (`createGame` in `src/lib/games.ts`). Games already
   created are unaffected. Clip lengths are `CLIP_LENGTHS` in `src/lib/clips.ts` (5/10/20/30 s).
+- **Live updates:** anything that changes a game calls `publishGameUpdate(gameId)` (`src/lib/live.ts`,
+  Postgres NOTIFY, so it reaches every app instance). `/api/live` streams "update" events (game id
+  only, no game data) to `<LiveRefresh>`, which calls `router.refresh()`; it holds off while music is
+  playing and falls back to 20 s polling if the feed is closed or silent (heartbeat every 25 s).
+  Mount it only on screens where nobody is mid-song. New code that changes game state must publish.
 - **Admin screens never show the songs of a game in progress** (the admin plays too): see
   `src/lib/admin-games.ts`. Clips have random file names, are only served to players in that game
   and never ahead of the current song; the full song unlocks only after a player answers.
