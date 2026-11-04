@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { CLIP_LENGTHS } from "@/lib/clips";
 import { GAME_LENGTHS, MAX_PLAYERS } from "@/lib/rules";
 import { createGameAction, type FormResult } from "./actions";
+import { matchesFilters, type SongMeta } from "@/lib/song-filters";
+import { SongFilterPicker, type FilterState } from "./SongFilterPicker";
 
 type Player = { id: string; name: string; isMe: boolean };
 
@@ -31,17 +33,37 @@ function Option({ name, value, checked, disabled, onChange, children }: {
 
 type Pool = "new" | "mix";
 
-export function CreateGameForm({ players, unplayed, catalogSize }: { players: Player[]; unplayed: number; catalogSize: number }) {
+const NO_FILTER_STATE: FilterState = { decades: new Set(), genres: new Set(), artists: [] };
+
+/** songs: every switched-on song's artist, year, genre and whether a game has used it (no titles). */
+export function CreateGameForm({ players, songs }: { players: Player[]; songs: SongMeta[] }) {
   const [result, formAction] = useActionState<FormResult, FormData>(createGameAction, null);
   const [picked, setPicked] = useState<Set<string>>(() => new Set(players.filter((p) => p.isMe).map((p) => p.id)));
   const shortest = GAME_LENGTHS[0];
-  // catalogSize counts switched-on songs; unplayed is the switched-on songs no game has used.
+
+  // Filters narrow which songs the game draws from; the counts below follow them live.
+  const [filter, setFilter] = useState<FilterState>(NO_FILTER_STATE);
+  const filtering = filter.decades.size > 0 || filter.genres.size > 0 || filter.artists.length > 0;
+  const matching = useMemo(
+    () =>
+      songs.filter((s) =>
+        matchesFilters(s, { decades: [...filter.decades], genres: [...filter.genres], artists: filter.artists.map((a) => a.key) }),
+      ),
+    [songs, filter],
+  );
+  // catalogSize counts matching switched-on songs; unplayed is those no game has used.
+  const catalogSize = matching.length;
+  const unplayed = matching.filter((s) => !s.played).length;
+
   const fitting = (p: Pool): number[] => GAME_LENGTHS.filter((n) => n <= (p === "mix" ? catalogSize : unplayed));
   const pickCount = (list: number[]) => (list.includes(10) ? 10 : (list[list.length - 1] ?? shortest));
   // If there aren't enough new songs left, start on "include earlier songs" so you're never stuck.
-  const [pool, setPool] = useState<Pool>(() => (unplayed >= shortest ? "new" : "mix"));
+  const [autoMix] = useState(() => songs.filter((s) => !s.played).length < shortest);
+  const [pool, setPool] = useState<Pool>(() => (autoMix ? "mix" : "new"));
   const fits = fitting(pool);
-  const [songCount, setSongCount] = useState<number>(() => pickCount(fits));
+  const [chosenCount, setSongCount] = useState<number>(() => pickCount(fits));
+  // When filters shrink the pool, fall back to the longest game that still fits.
+  const songCount = fits.includes(chosenCount) ? chosenCount : pickCount(fits);
   const [clipLength, setClipLength] = useState<number>(10);
   const [wrong, setWrong] = useState<"random" | "similar">("random");
   const canCreate = fits.length > 0 && picked.size > 0;
@@ -89,6 +111,25 @@ export function CreateGameForm({ players, unplayed, catalogSize }: { players: Pl
       </fieldset>
 
       <fieldset>
+        <legend className="flex w-full items-baseline justify-between text-sm font-semibold text-muted">
+          <span>Filters (optional)</span>
+          {filtering && (
+            <button type="button" onClick={() => setFilter(NO_FILTER_STATE)} className="text-xs font-medium text-muted underline hover:text-ink">
+              Clear
+            </button>
+          )}
+        </legend>
+        <div className="mt-2">
+          <SongFilterPicker songs={songs} value={filter} onChange={setFilter} />
+        </div>
+        <p className={`mt-3 text-xs ${filtering ? "font-semibold text-ink" : "text-muted"}`}>
+          {filtering
+            ? `${catalogSize} ${catalogSize === 1 ? "song matches" : "songs match"} (${unplayed} new). Wrong answers come from these songs too when there are enough.`
+            : "Leave empty to use the whole catalog. Within a filter any ticked option counts; across filters a song must match all of them."}
+        </p>
+      </fieldset>
+
+      <fieldset>
         <legend className="text-sm font-semibold text-muted">Songs</legend>
         <div className="mt-2 flex flex-wrap gap-2">
           {GAME_LENGTHS.map((n) => (
@@ -99,7 +140,8 @@ export function CreateGameForm({ players, unplayed, catalogSize }: { players: Pl
         </div>
         <p className="mt-2 text-xs text-muted">
           {unplayed} new {unplayed === 1 ? "song" : "songs"} (switched on, not played yet)
-          {catalogSize > unplayed && ` and ${catalogSize - unplayed} from earlier games`}.
+          {catalogSize > unplayed && ` and ${catalogSize - unplayed} from earlier games`}
+          {filtering && " match the filters"}.
         </p>
       </fieldset>
 
@@ -119,7 +161,7 @@ export function CreateGameForm({ players, unplayed, catalogSize }: { players: Pl
             : repeats > 0
               ? `New songs first, then ${repeats} from earlier games (the ones played longest ago), mixed in at random. Players may remember those.`
               : "New songs first; songs from earlier games only fill in if there aren't enough new ones."}
-          {pool === "mix" && unplayed < shortest && " Picked for you: there aren't enough new songs left for a game."}
+          {pool === "mix" && autoMix && " Picked for you: there aren't enough new songs left for a game."}
         </p>
       </fieldset>
 
@@ -155,10 +197,15 @@ export function CreateGameForm({ players, unplayed, catalogSize }: { players: Pl
       {/* Say why the button is greyed out instead of leaving it a mystery. */}
       {fits.length === 0 && (
         <p className="rounded-xl bg-danger/10 p-3 text-sm leading-relaxed text-danger" role="status">
-          {pool === "new" && catalogSize >= shortest ? (
+          {filtering && catalogSize < shortest ? (
             <>
-              Not enough new songs to start a game: only {unplayed} {unplayed === 1 ? "hasn't" : "haven't"} been
-              played, and the shortest game needs {shortest}. Pick &ldquo;Include songs from earlier games&rdquo;
+              Only {catalogSize} switched-on {catalogSize === 1 ? "song matches" : "songs match"} these filters, and the
+              shortest game needs {shortest}. Tick more options or clear a filter.
+            </>
+          ) : pool === "new" && catalogSize >= shortest ? (
+            <>
+              Not enough new songs to start a game: only {unplayed} {filtering ? "matching " : ""}
+              {unplayed === 1 ? "song hasn't" : "songs haven't"} been played, and the shortest game needs {shortest}. Pick &ldquo;Include songs from earlier games&rdquo;
               above, or add at least {shortest - unplayed} more on the{" "}
               <Link href="/admin/catalog" className="font-semibold underline">
                 Catalog page
