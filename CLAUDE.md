@@ -61,6 +61,8 @@ songs of a game in progress.
 - **Song details lookup:** Apple's free song search (`src/lib/lookup.ts`), about 20 searches a
   minute, so the catalog page runs lookups one at a time. song.link's free API is gone; Spotify links
   are exact only if `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` are set, otherwise a search link.
+  Songs looked up before the keys were set get exact links from the catalog page's "Find exact
+  Spotify links" (`fillSpotifyLinkFor` in `src/lib/catalog.ts`, which also fills past games' snapshots).
 - **Audio responses** must support HTTP Range (`serveFile` in `src/lib/storage.ts`): iPhone Safari won't
   play audio without it.
 - **Game rules and numbers** (reveal time, cutoff, points, guessing penalty) are all in
@@ -90,5 +92,17 @@ songs of a game in progress.
 ## Checks
 
 ```bash
-npm run typecheck && npm run lint && npm run build
+npm run typecheck && npm run lint && npm test && npm run build
 ```
+
+- `npm test` (Vitest) runs unit tests (`test/unit`) and database tests (`test/integration`) against a
+  real Postgres with ffmpeg cutting real clips. It recreates the database named in
+  `TEST_DATABASE_URL` (default `postgres://postgres@127.0.0.1:5432/randomnoise_test`; the name must
+  contain "test") and writes files under `TEST_DATA_DIR` (default: the OS temp folder). Emails only
+  print; `RESEND_API_KEY` is forced empty.
+- GitHub Actions (`.github/workflows/ci.yml`) runs all four on every pull request and push to `main`.
+- Pure logic lives in modules without server-only imports so it can be unit tested: `rules.ts`,
+  `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`.
+- **Artist limit:** a game has at most one song per artist for every five songs
+  (`maxSongsPerArtist` in `src/lib/draw.ts`); it never blocks a game, it spreads artists as evenly
+  as the catalog allows.

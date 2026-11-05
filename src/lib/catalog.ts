@@ -1,11 +1,11 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { songs, type Song } from "@/db/schema";
 import { convertToMp3, keepAsIs, probe, waveform } from "./audio";
-import { lookupSong } from "./lookup";
+import { findSpotifyLink, lookupSong } from "./lookup";
 import { ensureFolder, filePath, moveFile } from "./storage";
 
 export type IngestResult =
@@ -148,4 +148,28 @@ export async function runLookup(song: Song, opts: { overwrite?: boolean } = {}):
     console.error("Details lookup failed", song.title, err);
     await db.update(songs).set({ lookupStatus: "error", updatedAt: new Date() }).where(eq(songs.id, song.id));
   }
+}
+
+/**
+ * Fill in the exact Spotify link for a song that only has a search link, and
+ * give past games that used the song the same link (only where their copy had
+ * none). Never replaces a link that's already exact.
+ */
+export async function fillSpotifyLinkFor(songId: string): Promise<"found" | "not_found" | "skipped"> {
+  const [song] = await db
+    .select({ title: songs.title, artist: songs.artist, spotifyUrl: songs.spotifyUrl })
+    .from(songs)
+    .where(eq(songs.id, songId))
+    .limit(1);
+  if (!song || song.spotifyUrl) return "skipped";
+  const url = await findSpotifyLink(song.title, song.artist);
+  if (!url) return "not_found";
+  await db
+    .update(songs)
+    .set({ spotifyUrl: url, updatedAt: new Date() })
+    .where(and(eq(songs.id, songId), isNull(songs.spotifyUrl)));
+  await db.execute(sql`
+    update game_songs set song = jsonb_set(song, '{spotifyUrl}', to_jsonb(${url}::text))
+    where song_id = ${songId} and song->>'spotifyUrl' is null`);
+  return "found";
 }
