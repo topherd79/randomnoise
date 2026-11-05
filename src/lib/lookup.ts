@@ -93,6 +93,22 @@ async function itunesSearch(title: string, artist: string): Promise<LookupResult
 
 let spotifyToken: { value: string; expires: number } | null = null;
 
+/** Spotify turned down SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET (as opposed to being busy or down). */
+export class SpotifyKeysError extends Error {}
+
+/** Whether exact Spotify links can be looked up (SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET set). */
+export function spotifyConfigured(): boolean {
+  return Boolean(process.env.SPOTIFY_CLIENT_ID?.trim() && process.env.SPOTIFY_CLIENT_SECRET?.trim());
+}
+
+/**
+ * The exact Spotify track link for a title and artist, or undefined if Spotify
+ * has no match (or isn't configured). Throws if Spotify's API fails.
+ */
+export async function findSpotifyLink(title: string, artist: string): Promise<string | undefined> {
+  return spotifySearch(title, artist);
+}
+
 async function spotifySearch(title: string, artist: string): Promise<string | undefined> {
   const id = process.env.SPOTIFY_CLIENT_ID?.trim();
   const secret = process.env.SPOTIFY_CLIENT_SECRET?.trim();
@@ -108,6 +124,7 @@ async function spotifySearch(title: string, artist: string): Promise<string | un
       body: "grant_type=client_credentials",
       signal: AbortSignal.timeout(10_000),
     });
+    if (res.status === 400 || res.status === 401) throw new SpotifyKeysError(`Spotify didn't accept the keys (${res.status})`);
     if (!res.ok) throw new Error(`Spotify token request returned ${res.status}`);
     const json = (await res.json()) as { access_token: string; expires_in: number };
     spotifyToken = { value: json.access_token, expires: Date.now() + (json.expires_in - 60) * 1000 };

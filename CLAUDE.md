@@ -61,6 +61,8 @@ songs of a game in progress.
 - **Song details lookup:** Apple's free song search (`src/lib/lookup.ts`), about 20 searches a
   minute, so the catalog page runs lookups one at a time. song.link's free API is gone; Spotify links
   are exact only if `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` are set, otherwise a search link.
+  Songs looked up before the keys were set get exact links from the catalog page's "Find exact
+  Spotify links" (`fillSpotifyLinkFor` in `src/lib/catalog.ts`, which also fills past games' snapshots).
 - **Audio responses** must support HTTP Range (`serveFile` in `src/lib/storage.ts`): iPhone Safari won't
   play audio without it.
 - **Game rules and numbers** (reveal time, cutoff, points, guessing penalty) are all in
