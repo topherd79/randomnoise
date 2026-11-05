@@ -51,6 +51,17 @@ Open http://localhost:3000/login and enter the admin email. Without `RESEND_API_
 | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | Optional. With a Spotify developer app's keys, songs get exact Spotify links; without them, the Spotify button opens a search |
 | `DATA_DIR` | Optional. Where song files and clips live. Defaults to the Railway volume, or `./data` locally |
 
+## Tests
+
+```bash
+npm test
+```
+
+Unit tests plus database tests that play real games against a local Postgres (with ffmpeg cutting
+real clips). They recreate the database in `TEST_DATABASE_URL`
+(default `postgres://postgres@127.0.0.1:5432/randomnoise_test`). GitHub Actions runs typecheck, lint,
+tests and a build on every pull request.
+
 ## Deploying
 
 Every push to `main` deploys to Railway (project `randomnoise`, service `randomnoise`, with a

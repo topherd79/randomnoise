@@ -1,4 +1,8 @@
 import "server-only";
+import { normalize } from "./normalize";
+
+// normalize() lives in ./normalize (pure, testable); re-exported for existing callers.
+export { normalize };
 
 // Fills in a song's artwork, year, genre and listening links from its title and artist.
 // - Apple's free song search (iTunes Search API): artwork, Apple Music link, year, genre.
@@ -20,20 +24,7 @@ export type LookupResult = {
   spotifyUrl?: string;
 };
 
-/** Lowercase, no accents, no "(Remastered 2011)" / "- Live" / "feat." extras, no punctuation. */
-export function normalize(s: string): string {
-  return s
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/\s*[([].*?[)\]]/g, " ")
-    .replace(/\s+-\s+.*(remaster|live|version|mix|edit|mono|stereo|single|demo).*$/i, " ")
-    .replace(/\b(feat|ft|featuring)\.?\s.*$/, " ")
-    .replace(/&/g, " and ")
-    .replace(/^the\s+/, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
+
 
 type ItunesTrack = {
   trackName?: string;
