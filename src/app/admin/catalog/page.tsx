@@ -5,6 +5,8 @@ import { requireAdmin } from "@/lib/auth";
 import { catalogCounts } from "@/lib/catalog-queries";
 import { Uploader } from "./Uploader";
 import { LookupRunner } from "./LookupRunner";
+import { RetryLookups } from "./RetryLookups";
+import { songKey } from "@/lib/normalize";
 import { SpotifyLinksRunner } from "./SpotifyLinksRunner";
 import { spotifyConfigured } from "@/lib/lookup";
 import { SongTable, type SongRow } from "./SongTable";
@@ -37,6 +39,9 @@ export default async function CatalogPage() {
     catalogCounts(),
   ]);
 
+  // Copies of one song (same title and artist): games treat them as one song.
+  const copiesOf = new Map<string, number>();
+  for (const r of rows) copiesOf.set(songKey(r.title, r.artist), (copiesOf.get(songKey(r.title, r.artist)) ?? 0) + 1);
   const tableRows: SongRow[] = rows.map((r) => ({
     id: r.id,
     title: r.title,
@@ -58,7 +63,9 @@ export default async function CatalogPage() {
     lookupStatus: r.lookupStatus,
     needsReview: r.needsReview,
     active: r.active,
+    copies: copiesOf.get(songKey(r.title, r.artist)) ?? 1,
   }));
+  const notFound = rows.filter((r) => r.lookupStatus === "not_found" || r.lookupStatus === "error").length;
   const pending = rows.filter((r) => r.lookupStatus === "pending").length;
   const review = rows.filter((r) => r.needsReview).length;
 
@@ -95,6 +102,7 @@ export default async function CatalogPage() {
 
       <Uploader />
       <LookupRunner pending={pending} />
+      {pending === 0 && notFound > 0 && <RetryLookups count={notFound} />}
       <SpotifyLinksRunner
         configured={spotifyConfigured()}
         // Only songs whose details lookup is done: the lookup itself finds Spotify links for new ones.

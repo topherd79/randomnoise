@@ -50,6 +50,13 @@
       "when": 1794171536100,
       "tag": "0006_game_modes",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794180990602,
+      "tag": "0007_genre_names",
+      "breakpoints": true
     }
   ]
 }

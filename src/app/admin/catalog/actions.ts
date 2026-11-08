@@ -10,6 +10,7 @@ import { requireAdmin } from "@/lib/auth";
 import { fillSpotifyLinkFor, runLookup } from "@/lib/catalog";
 import { SpotifyKeysError, spotifyConfigured } from "@/lib/lookup";
 import { CLIP_LENGTHS } from "@/lib/clips";
+import { canonicalGenre } from "@/lib/genres";
 import { removeFile } from "@/lib/storage";
 
 // Every action here re-checks the admin: server actions are public endpoints.
@@ -33,6 +34,22 @@ export async function lookupNext(): Promise<{ remaining: number }> {
   const [{ n }] = await db.select({ n: count() }).from(songs).where(eq(songs.lookupStatus, "pending"));
   if (next) revalidatePath("/admin/catalog");
   return { remaining: n };
+}
+
+/**
+ * Queue every song whose details lookup found nothing (or failed) for another
+ * try. The lookup runner on the catalog page then works through them at
+ * Apple's pace; songs found this time stop needing a look.
+ */
+export async function retryNotFoundLookups(): Promise<{ queued: number }> {
+  await requireAdmin();
+  const queued = await db
+    .update(songs)
+    .set({ lookupStatus: "pending", needsReview: false, updatedAt: new Date() })
+    .where(inArray(songs.lookupStatus, ["not_found", "error"]))
+    .returning({ id: songs.id });
+  revalidatePath("/admin/catalog");
+  return { queued: queued.length };
 }
 
 export async function lookupAgain(id: string): Promise<FormResult> {
@@ -65,7 +82,7 @@ const detailsSchema = z.object({
     .trim()
     .transform((s) => (s ? Number(s) : null))
     .refine((y) => y === null || (Number.isInteger(y) && y >= 1900 && y <= 2100), "Year should be like 1997."),
-  genre: z.string().trim().max(80).transform((s) => s || null),
+  genre: z.string().trim().max(80).transform((s) => canonicalGenre(s)),
   artworkUrl: optionalUrl,
   appleMusicUrl: optionalUrl,
   spotifyUrl: optionalUrl,

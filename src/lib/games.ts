@@ -21,7 +21,8 @@ import { cutClip, probe } from "./audio";
 import { publishGameUpdate } from "./live";
 import { filterKey, hasFilters, matchesFilters, NO_FILTERS, type SongFilters } from "./song-filters";
 import { createLoginUrl } from "./auth";
-import { usedSongIdsSql } from "./catalog-queries";
+import { usedSongs } from "./catalog-queries";
+import { songKey } from "./normalize";
 import { pickClipStart } from "./clips";
 import { gameOnEmail, gameOverEmail, nudgeEmail, sendEmail } from "./email";
 import { maxSongsPerArtist, pickSpreadOut, pickWrongAnswers, shuffle } from "./draw";
@@ -76,24 +77,30 @@ export async function createGame(opts: {
   if (players.length !== playerIds.length) return { ok: false, error: "One of those players no longer exists." };
 
   // Inactive songs are left out entirely: never drawn, never a wrong answer.
-  // Candidates are just id + artist; full rows are loaded for the songs picked.
-  const fresh = await db
-    .select({ id: songs.id, artist: songs.artist })
-    .from(songs)
-    .where(and(eq(songs.active, true), sql`${songs.id} not in ${usedSongIdsSql}`, ...matching))
-    .orderBy(sql`random()`);
+  // Candidates are just id, title and artist; full rows are loaded for the songs picked.
+  const [candidates, { lastUsed }] = await Promise.all([
+    db
+      .select({ id: songs.id, title: songs.title, artist: songs.artist })
+      .from(songs)
+      .where(and(eq(songs.active, true), ...matching))
+      .orderBy(sql`random()`),
+    usedSongs(),
+  ]);
+  // Copies of one song (same title and artist) count as one song: a game never
+  // draws two of them, and a copy of a played song isn't new.
+  const seen = new Set<string>();
+  const distinct = candidates.filter((c) => {
+    const k = songKey(c.title, c.artist);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const fresh = distinct.filter((c) => lastUsed(c) === null);
   // With "include songs from earlier games", those come after the new ones,
-  // the ones played longest ago first.
+  // the ones played longest ago first (ties stay in random order).
   const earlier =
     songPool === "mix"
-      ? await db
-          .select({ id: songs.id, artist: songs.artist })
-          .from(songs)
-          .where(and(eq(songs.active, true), sql`${songs.id} in ${usedSongIdsSql}`, ...matching))
-          .orderBy(
-            sql`(select max(g.created_at) from game_songs gs join games g on g.id = gs.game_id where gs.song_id = ${songs.id}) asc nulls first`,
-            sql`random()`,
-          )
+      ? distinct.filter((c) => lastUsed(c) !== null).sort((a, b) => lastUsed(a)! - lastUsed(b)!)
       : [];
   // No more than one song per artist for every five in the game, where the catalog allows.
   const chosen = pickSpreadOut(fresh, earlier, songCount, maxSongsPerArtist(songCount));
@@ -122,7 +129,9 @@ export async function createGame(opts: {
   // Wrong answers come from the same filtered set when it's big enough (a Queen-only
   // game gets Queen songs as wrong answers), otherwise from the whole catalog.
   const filteredPool = filtered ? pool.filter((c) => matchesFilters(c, filters)) : pool;
-  const inThisGame = new Set(drawn.map((s) => s.id));
+  // Wrong answers avoid the game's own songs, and any copy of them.
+  const keysInGame = new Set(drawn.map((s) => songKey(s.title, s.artist)));
+  const inThisGame = new Set(pool.filter((c) => keysInGame.has(songKey(c.title, c.artist))).map((c) => c.id));
 
   await ensureFolder("clips");
   const made: string[] = [];
