@@ -5,6 +5,8 @@ import { requireAdmin } from "@/lib/auth";
 import { catalogCounts } from "@/lib/catalog-queries";
 import { Uploader } from "./Uploader";
 import { LookupRunner } from "./LookupRunner";
+import { SpotifyLinksRunner } from "./SpotifyLinksRunner";
+import { spotifyConfigured } from "@/lib/lookup";
 import { SongTable, type SongRow } from "./SongTable";
 
 export default async function CatalogPage() {
@@ -28,6 +30,7 @@ export default async function CatalogPage() {
         lookupStatus: songs.lookupStatus,
         needsReview: songs.needsReview,
         active: songs.active,
+        spotifyUrl: songs.spotifyUrl,
       })
       .from(songs)
       .orderBy(desc(songs.createdAt)),
@@ -80,6 +83,11 @@ export default async function CatalogPage() {
 
       <Uploader />
       <LookupRunner pending={pending} />
+      <SpotifyLinksRunner
+        configured={spotifyConfigured()}
+        // Only songs whose details lookup is done: the lookup itself finds Spotify links for new ones.
+        ids={rows.filter((r) => !r.spotifyUrl && r.lookupStatus !== "pending").map((r) => r.id)}
+      />
 
       {rows.length > 0 ? (
         <SongTable rows={tableRows} />

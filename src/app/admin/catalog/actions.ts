@@ -7,7 +7,8 @@ import { asc, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { songs } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
-import { runLookup } from "@/lib/catalog";
+import { fillSpotifyLinkFor, runLookup } from "@/lib/catalog";
+import { SpotifyKeysError, spotifyConfigured } from "@/lib/lookup";
 import { CLIP_LENGTHS } from "@/lib/clips";
 import { removeFile } from "@/lib/storage";
 
@@ -157,6 +158,24 @@ export async function setSongsActive(ids: string[], active: boolean): Promise<Fo
   revalidatePath("/admin/games");
   const n = updated.length;
   return { ok: true, message: `${n} ${n === 1 ? "song" : "songs"} switched ${parsed.data.active ? "on" : "off"}.` };
+}
+
+/**
+ * Find the exact Spotify link for one song that only has a search link. The
+ * catalog page calls this for each such song in turn ("Find exact Spotify links").
+ */
+export async function fillSpotifyLink(
+  id: string,
+): Promise<{ status: "found" | "not_found" | "skipped" | "bad_keys" | "error" }> {
+  await requireAdmin();
+  if (!spotifyConfigured()) return { status: "bad_keys" };
+  try {
+    return { status: await fillSpotifyLinkFor(String(id)) };
+  } catch (err) {
+    if (err instanceof SpotifyKeysError) return { status: "bad_keys" };
+    console.error("Spotify link lookup failed", id, err);
+    return { status: "error" };
+  }
 }
 
 export async function removeCustomClip(id: string): Promise<FormResult> {

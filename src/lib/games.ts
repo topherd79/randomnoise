@@ -23,7 +23,7 @@ import { createLoginUrl } from "./auth";
 import { usedSongIdsSql } from "./catalog-queries";
 import { pickClipStart } from "./clips";
 import { gameOnEmail, gameOverEmail, nudgeEmail, sendEmail } from "./email";
-import { normalize } from "./lookup";
+import { maxSongsPerArtist, pickSpreadOut, pickWrongAnswers, shuffle } from "./draw";
 import { scoreAnswer } from "./rules";
 import { ensureFolder, filePath, removeFile } from "./storage";
 
@@ -32,63 +32,6 @@ type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 // ---------------------------------------------------------------------------
 // Creating a game
 // ---------------------------------------------------------------------------
-
-type Candidate = { id: string; title: string; artist: string; year: number | null; genre: string | null };
-
-/** How unlike two songs are in era and genre (0 = same genre, same year). */
-function distance(a: Candidate, b: Candidate): number {
-  const ga = a.genre ? normalize(a.genre) : "";
-  const gb = b.genre ? normalize(b.genre) : "";
-  const genre = !ga || !gb ? 1 : ga === gb ? 0 : 2;
-  const year = a.year && b.year ? Math.min(Math.abs(a.year - b.year) / 4, 3) : 1.5;
-  return genre + year;
-}
-
-function shuffle<T>(list: T[], random: () => number): T[] {
-  const out = [...list];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
-/**
- * Three wrong answers for a song: other catalog songs, at random or (for
- * "similar") from the closest era and genre, with a little randomness so it
- * isn't always the same three. Songs coming up later in the same game are
- * avoided where possible, since seeing one as a wrong answer would be a hint.
- */
-export function pickWrongAnswers(
-  answer: Candidate,
-  pool: Candidate[],
-  inThisGame: Set<string>,
-  mode: WrongAnswerMode,
-  random: () => number = Math.random,
-): Candidate[] {
-  const label = (c: Candidate) => `${normalize(c.title)}|${normalize(c.artist)}`;
-  const order = (list: Candidate[]) =>
-    mode === "similar"
-      ? list
-          .map((c) => ({ c, d: distance(answer, c) + random() * 0.75 }))
-          .sort((x, y) => x.d - y.d)
-          .map((x) => x.c)
-      : shuffle(list, random);
-
-  const others = pool.filter((c) => c.id !== answer.id);
-  const preferred = others.filter((c) => !inThisGame.has(c.id));
-  const fallback = others.filter((c) => inThisGame.has(c.id));
-  const seen = new Set([label(answer)]);
-  const out: Candidate[] = [];
-  for (const c of [...order(preferred), ...order(fallback)]) {
-    const l = label(c);
-    if (seen.has(l)) continue; // the same song uploaded twice would look like two right answers
-    seen.add(l);
-    out.push(c);
-    if (out.length === 3) break;
-  }
-  return out;
-}
 
 /**
  * Which songs a new game may use:
@@ -127,28 +70,29 @@ export async function createGame(opts: {
   if (players.length !== playerIds.length) return { ok: false, error: "One of those players no longer exists." };
 
   // Inactive songs are left out entirely: never drawn, never a wrong answer.
+  // Candidates are just id + artist; full rows are loaded for the songs picked.
   const fresh = await db
-    .select()
+    .select({ id: songs.id, artist: songs.artist })
     .from(songs)
     .where(and(eq(songs.active, true), sql`${songs.id} not in ${usedSongIdsSql}`, ...matching))
-    .orderBy(sql`random()`)
-    .limit(songCount);
-  let drawn = fresh;
-  if (fresh.length < songCount && songPool === "mix") {
-    // Top up with songs from earlier games, the ones played longest ago first,
-    // then shuffle so the repeats aren't all bunched at the end of the game.
-    const repeats = await db
-      .select()
-      .from(songs)
-      .where(and(eq(songs.active, true), sql`${songs.id} in ${usedSongIdsSql}`, ...matching))
-      .orderBy(
-        sql`(select max(g.created_at) from game_songs gs join games g on g.id = gs.game_id where gs.song_id = ${songs.id}) asc nulls first`,
-        sql`random()`,
-      )
-      .limit(songCount - fresh.length);
-    drawn = shuffle([...fresh, ...repeats], Math.random);
-  }
-  if (drawn.length < songCount) {
+    .orderBy(sql`random()`);
+  // With "include songs from earlier games", those come after the new ones,
+  // the ones played longest ago first.
+  const earlier =
+    songPool === "mix"
+      ? await db
+          .select({ id: songs.id, artist: songs.artist })
+          .from(songs)
+          .where(and(eq(songs.active, true), sql`${songs.id} in ${usedSongIdsSql}`, ...matching))
+          .orderBy(
+            sql`(select max(g.created_at) from game_songs gs join games g on g.id = gs.game_id where gs.song_id = ${songs.id}) asc nulls first`,
+            sql`random()`,
+          )
+      : [];
+  // No more than one song per artist for every five in the game, where the catalog allows.
+  const chosen = pickSpreadOut(fresh, earlier, songCount, maxSongsPerArtist(songCount));
+  if (chosen.length < songCount) {
+    const drawn = chosen;
     const which = filtered ? " that match these filters" : "";
     return {
       ok: false,
@@ -158,6 +102,13 @@ export async function createGame(opts: {
           : `There are only ${drawn.length} new songs${which} (switched on, not played yet). Include songs from earlier games, ${filtered ? "loosen the filters" : "add or turn on more songs"}, or pick a shorter game.`,
     };
   }
+  // Load the picked songs, in a shuffled play order (so songs from earlier games
+  // aren't bunched at the end).
+  const rowsById = new Map(
+    (await db.select().from(songs).where(inArray(songs.id, chosen.map((c) => c.id)))).map((r) => [r.id, r]),
+  );
+  const drawn = shuffle(chosen).flatMap((c) => (rowsById.has(c.id) ? [rowsById.get(c.id)!] : []));
+  if (drawn.length < songCount) return { ok: false, error: "Some songs changed while the game was being made. Try again." };
   const pool = await db
     .select({ id: songs.id, title: songs.title, artist: songs.artist, year: songs.year, genre: songs.genre })
     .from(songs)
