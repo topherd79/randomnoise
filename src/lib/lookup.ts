@@ -77,12 +77,19 @@ export function bestItunesMatch(results: ItunesTrack[], title: string, artist: s
   };
 }
 
-async function itunesSearch(title: string, artist: string): Promise<LookupResult> {
-  const term = `${artist} ${title.replace(/\s*[([].*?[)\]]/g, "")}`;
+/** The title without "(2015 Remaster)" or " - Remastered 2011": what Apple's search can find. */
+const searchTitle = (title: string) =>
+  title
+    .replace(/\s*[([].*?[)\]]/g, "")
+    .replace(/\s+-\s+.*$/, "")
+    .trim() || title;
+
+async function itunesSearch(title: string, artist: string, by: "artist and title" | "title" = "artist and title"): Promise<LookupResult> {
+  const term = by === "title" ? searchTitle(title) : `${artist} ${searchTitle(title)}`;
   const url = `https://itunes.apple.com/search?${new URLSearchParams({
     term,
     entity: "song",
-    limit: "25",
+    limit: by === "title" ? "50" : "25",
     country: "US",
   })}`;
   const res = await fetch(url, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(10_000) });
@@ -147,9 +154,18 @@ async function spotifySearch(title: string, artist: string): Promise<string | un
   return hit?.external_urls.spotify;
 }
 
-/** Look up one song. Throws only when Apple's search itself fails (network, rate limit). */
-export async function lookupSong(title: string, artist: string): Promise<LookupResult> {
-  const result = await itunesSearch(title, artist);
+/**
+ * Look up one song. Throws only when Apple's search itself fails (network, rate limit).
+ * If searching for artist and title finds nothing, it tries once more with the
+ * title alone (still matching the artist), after a pause that keeps us under
+ * Apple's limit of about 20 searches a minute.
+ */
+export async function lookupSong(title: string, artist: string, opts: { retryAfterMs?: number } = {}): Promise<LookupResult> {
+  let result = await itunesSearch(title, artist);
+  if (!result.found) {
+    await new Promise((r) => setTimeout(r, opts.retryAfterMs ?? 3500));
+    result = await itunesSearch(title, artist, "title");
+  }
   try {
     const spotifyUrl = await spotifySearch(title, artist);
     if (spotifyUrl) result.spotifyUrl = spotifyUrl;

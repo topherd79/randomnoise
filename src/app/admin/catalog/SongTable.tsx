@@ -20,6 +20,8 @@ export type SongRow = {
   lookupStatus: LookupStatus;
   needsReview: boolean;
   active: boolean;
+  /** How many songs in the catalog share this one's title and artist (1 = no copies). */
+  copies: number;
 };
 
 export function Artwork({ url, size = 40 }: { url: string | null; size?: number }) {
@@ -40,10 +42,16 @@ export function Artwork({ url, size = 40 }: { url: string | null; size?: number 
 }
 
 function Status({ row }: { row: SongRow }) {
+  const copies =
+    row.copies > 1 ? (
+      <span className="text-xs text-muted" title="Games treat copies with the same title and artist as one song">
+        {row.copies} copies
+      </span>
+    ) : null;
   if (row.lookupStatus === "pending") return <span className="text-xs text-muted">Looking up…</span>;
   if (row.needsReview) return <span className="text-xs font-semibold text-danger">Needs a look</span>;
   if (row.lookupStatus === "error") return <span className="text-xs text-muted">Lookup failed</span>;
-  return null;
+  return copies;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +131,7 @@ export function groupByArtist(rows: SongRow[]): ArtistGroup[] {
 // ---------------------------------------------------------------------------
 
 type View = "artist" | "recent";
-type Show = "all" | "active" | "inactive" | "review";
+type Show = "all" | "active" | "inactive" | "review" | "copies";
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -146,7 +154,8 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
           (show === "all" ||
             (show === "active" && r.active) ||
             (show === "inactive" && !r.active) ||
-            (show === "review" && r.needsReview)) &&
+            (show === "review" && r.needsReview) ||
+            (show === "copies" && r.copies > 1)) &&
           (!q || `${r.title} ${r.artist} ${r.album ?? ""} ${r.genre ?? ""} ${r.year ?? ""}`.toLowerCase().includes(q)),
       ),
     [rows, q, show],
@@ -167,6 +176,7 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
 
   const offTotal = rows.filter((r) => !r.active).length;
   const reviewTotal = rows.filter((r) => r.needsReview).length;
+  const copiesTotal = rows.filter((r) => r.copies > 1).length;
 
   return (
     <section>
@@ -197,6 +207,7 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
             <option value="active">In games only</option>
             <option value="inactive">Left out of games ({offTotal})</option>
             <option value="review">Needs a look ({reviewTotal})</option>
+            {copiesTotal > 0 && <option value="copies">Same song more than once ({copiesTotal})</option>}
           </select>
         </label>
       </div>

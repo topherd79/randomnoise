@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { songs, type Song } from "@/db/schema";
 import { convertToMp3, keepAsIs, probe, waveform } from "./audio";
 import { findSpotifyLink, lookupSong } from "./lookup";
+import { canonicalGenre } from "./genres";
 import { ensureFolder, filePath, moveFile } from "./storage";
 
 export type IngestResult =
@@ -86,7 +87,7 @@ export async function ingestUpload(opts: {
         artist,
         album: info.tags.album ?? null,
         year: info.tags.year ?? null,
-        genre: info.tags.genre ?? null,
+        genre: canonicalGenre(info.tags.genre),
         needsReview: !info.tags.title || !info.tags.artist,
         durationSec: info.durationSec,
         fileName,
@@ -137,7 +138,7 @@ export async function runLookup(song: Song, opts: { overwrite?: boolean } = {}):
         needsReview: current.needsReview || !r.found,
         album: current.album ?? r.album ?? null,
         year,
-        genre: pick(r.genre, current.genre),
+        genre: canonicalGenre(pick(r.genre, current.genre)),
         artworkUrl: pick(r.artworkUrl, current.artworkUrl),
         appleMusicUrl: pick(r.appleMusicUrl, current.appleMusicUrl),
         spotifyUrl: pick(r.spotifyUrl, current.spotifyUrl),

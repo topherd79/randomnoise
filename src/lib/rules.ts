@@ -1,6 +1,8 @@
 // The game's rules and numbers, in one place so they're easy to tune after test games.
 // Shared by the server (scoring) and the play screen (reveal animation, points ticker).
 
+import { cleanTitle } from "./normalize";
+
 export const MIN_PLAYERS = 1;
 export const MAX_PLAYERS = 5;
 
@@ -43,8 +45,9 @@ export function revealedChars(length: number, elapsedMs: number): number {
   return Math.ceil(length * (elapsedMs / REVEAL_MS));
 }
 
+/** "Title – Artist", without release labels like "(2015 Remaster)" that only make the choices longer. */
 export function choiceLabel(c: { title: string; artist: string }): string {
-  return `${c.title} – ${c.artist}`;
+  return `${cleanTitle(c.title)} – ${c.artist}`;
 }
 
 /**
