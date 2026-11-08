@@ -96,6 +96,8 @@ in progress.
   `src/lib/admin-games.ts`. Clips have random file names, are only served to players in that game
   and never ahead of that player's next song (`mayPlayClip`); the full song unlocks only after a
   player answers.
+  The catalog page's "Download catalog (CSV)" (`/api/admin/catalog`, `catalogExport`) counts plays
+  from finished and ended games only, for the same reason.
 - Phone screens: max width `max-w-md`, respect safe areas, inputs at 16px+ so iOS doesn't zoom.
   Admin screens are laid out for a desktop browser.
 
