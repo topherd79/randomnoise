@@ -6,7 +6,8 @@ import { formatPoints, formatSeconds } from "@/lib/rules";
 import { Logo } from "@/components/Logo";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { PlayRound } from "./PlayRound";
-import { PicksList, ResultsCard, SongCard, StandingsCard } from "./parts";
+import { PicksList, ResultsCard, SongCard } from "./parts";
+import { Standings } from "./Standings";
 import { Waiting } from "./Waiting";
 
 function serverTime() {
@@ -105,26 +106,18 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
         <Waiting gameId={view.id} me={userId} waitingOn={view.waitingOn} roundLength={view.roundLength} note={view.waitingNote} />
       )}
 
-      {view.completedCount > 0 && (
-        <StandingsCard
+      {/* Tap a name for that player's song-by-song history (songs I've answered only). */}
+      {(view.completedCount > 0 || view.songs.length > 0) && (
+        <Standings
           standings={view.standings}
-          title={`Standings after ${view.completedCount} ${view.completedCount === 1 ? "song" : "songs"}`}
+          songs={view.songs}
+          title={
+            view.completedCount > 0
+              ? `Standings after ${view.completedCount} ${view.completedCount === 1 ? "song" : "songs"}`
+              : "Standings"
+          }
           played={view.roundLength > 1 ? { songCount: view.songCount } : undefined}
         />
-      )}
-
-      {view.earlier.length > 0 && (
-        <details className="group">
-          <summary className="cursor-pointer list-none text-sm font-semibold text-muted">
-            <span className="group-open:hidden">Show earlier songs ({view.earlier.length})</span>
-            <span className="hidden group-open:inline">Hide earlier songs</span>
-          </summary>
-          <div className="mt-4 flex flex-col gap-8">
-            {view.earlier.map((r) => (
-              <ResultsCard key={r.position} results={r} title={`Song ${r.position}`} />
-            ))}
-          </div>
-        </details>
       )}
     </div>
   );
@@ -149,7 +142,7 @@ function OverGame({ view }: { view: GameView }) {
           </p>
         )}
       </section>
-      <StandingsCard standings={view.standings} title="Final standings" />
+      <Standings standings={view.standings} songs={view.songs} title="Final standings" />
       {view.history.map((r) => (
         <ResultsCard key={r.position} results={r} title={`Song ${r.position}`} />
       ))}
