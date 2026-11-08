@@ -81,14 +81,14 @@ describe("3 songs mode", () => {
     expect(mikeView.waitingOn).toEqual([{ userId: sarah, name: "Sarah", left: 3 }]);
     expect(mikeView.latest?.position).toBe(3);
     expect(mikeView.latest?.picks.find((p) => p.userId === sarah)).toMatchObject({ pending: true, label: null });
-    expect(mikeView.earlier.map((e) => e.position)).toEqual([2, 1]);
+    expect(mikeView.songs.map((e) => e.position)).toEqual([3, 2, 1]);
     expect(mikeView.completedCount).toBe(0);
 
     // Sarah sees nothing about songs she hasn't answered, and plays in order.
     let sarahView = (await loadGameView(r.gameId, sarah))!;
     expect(sarahView.next?.position).toBe(1);
     expect(sarahView.latest).toBeNull();
-    expect(sarahView.earlier).toEqual([]);
+    expect(sarahView.songs).toEqual([]);
     expect(JSON.stringify(sarahView)).not.toContain(mikeView.latest!.song.title);
     expect(await play(sarah, r.gameId, 2)).toMatchObject({ ok: false });
 
@@ -97,7 +97,7 @@ describe("3 songs mode", () => {
     expect((await play(sarah, r.gameId, 1, false)).ok).toBe(true);
     expect(clipExists(song1.clipFile)).toBe(false);
     const mikeAgain = (await loadGameView(r.gameId, mike))!;
-    const sarahOnSong1 = mikeAgain.earlier.find((e) => e.position === 1)!.picks.find((p) => p.userId === sarah)!;
+    const sarahOnSong1 = mikeAgain.songs.find((e) => e.position === 1)!.picks.find((p) => p.userId === sarah)!;
     expect(sarahOnSong1.pending).toBeFalsy();
     expect(sarahOnSong1.correct).toBe(false);
     expect(mikeAgain.completedCount).toBe(1);

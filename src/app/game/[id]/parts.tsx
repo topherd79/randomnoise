@@ -1,4 +1,3 @@
-import type { Standing } from "@/lib/games";
 import type { Pick, ResultsView, SongInfo } from "@/lib/game-view";
 import { formatPoints, formatSeconds } from "@/lib/rules";
 
@@ -92,45 +91,6 @@ export function ResultsCard({ results, title }: { results: ResultsView; title?: 
       </h2>
       <SongCard song={results.song} />
       <PicksList picks={results.picks} />
-    </section>
-  );
-}
-
-/**
- * Points count only songs every player has answered, so the order is always a
- * fair comparison; `played` shows how far each player has got when songs open
- * several at a time.
- */
-export function StandingsCard({
-  standings,
-  title = "Standings",
-  played,
-}: {
-  standings: Standing[];
-  title?: string;
-  /** Show "6 of 9 played" for each player (modes with several songs open). */
-  played?: { songCount: number };
-}) {
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">{title}</h2>
-      <ol className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
-        {standings.map((s, i) => (
-          <li key={s.userId} className="flex items-center gap-3 px-4 py-3">
-            <span className="w-6 text-center font-bold text-muted tabular-nums">{i + 1}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block font-semibold">{s.name}</span>
-              {played && (
-                <span className="block text-xs text-muted">
-                  {s.played} of {played.songCount} played
-                </span>
-              )}
-            </span>
-            <span className="text-sm text-muted">{s.correct} right</span>
-            <span className="w-16 text-right font-bold tabular-nums">{formatPoints(s.points)}</span>
-          </li>
-        ))}
-      </ol>
     </section>
   );
 }

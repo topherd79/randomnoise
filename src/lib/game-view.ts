@@ -72,8 +72,12 @@ export type GameView = {
   next: RoundView | null;
   /** The song I answered most recently, with everyone's picks so far. */
   latest: AnsweredView | null;
-  /** The other songs I've answered, newest first. */
-  earlier: ResultsView[];
+  /**
+   * Every song whose picks I may see, newest first: the ones I've answered while
+   * the game is on, every completed song once it's over. Feeds each player's
+   * history in the standings.
+   */
+  songs: ResultsView[];
   /** Players (me included) with songs left in the open round. */
   waitingOn: Waiter[];
   /** What happens once they're done, in plain words. */
@@ -176,7 +180,7 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
 
   let next: RoundView | null = null;
   let latest: AnsweredView | null = null;
-  let earlier: ResultsView[] = [];
+  let mySongs: ResultsView[] = [];
   let waitingOn: Waiter[] = [];
   if (active) {
     const nextPos = nextPosition(round, answeredInRound(userId));
@@ -217,13 +221,14 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
         },
       };
     }
-    earlier = mineDone.slice(1).map(resultsFor);
+    mySongs = mineDone.map(resultsFor);
     waitingOn = players
       .map((p) => ({ userId: p.userId, name: p.name, left: songsLeft(round, answeredInRound(p.userId)) }))
       .filter((w) => w.left > 0);
   }
 
   const completed = rounds.filter((r) => r.gs.completedAt);
+  const history = completed.map(resultsFor).reverse();
   return {
     id: g.id,
     status: g.status,
@@ -235,10 +240,10 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
     players,
     next,
     latest,
-    earlier,
+    songs: active ? mySongs : history,
     waitingOn,
     waitingNote: waitingNote(g.mode, round, g.songCount),
-    history: completed.map(resultsFor).reverse(),
+    history,
     standings: table,
     completedCount: completed.length,
   };
