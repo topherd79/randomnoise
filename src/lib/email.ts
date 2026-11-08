@@ -2,6 +2,7 @@ import "server-only";
 import { Resend } from "resend";
 import { adminEmail, emailFrom } from "./env";
 import type { GameResults } from "./game-view";
+import type { GameMode } from "./modes";
 import { formatPoints, formatSeconds } from "./rules";
 
 type Email = {
@@ -111,29 +112,50 @@ function names(list: string[]): string {
   return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 }
 
-export function gameOnEmail(name: string, url: string, game: { songCount: number; others: string[] }) {
+export function gameOnEmail(name: string, url: string, game: { songCount: number; mode: GameMode; others: string[] }) {
   const withWho = game.others.length ? ` with ${names(game.others)}` : "";
+  const n = game.songCount;
+  const how =
+    game.mode === "three"
+      ? {
+          subject: `Game on: ${n} songs, three at a time`,
+          line: `${n} songs${withWho}, three at a time. Play them whenever you like; the next three open once everyone has played the first three.`,
+          waiting: "Songs 1 to 3 are waiting.",
+        }
+      : game.mode === "all"
+        ? {
+            subject: `Game on: ${n} songs, all at once`,
+            line: `${n} songs${withWho}, all open now. Play them at your own pace; the final results come in once everyone has played every song.`,
+            waiting: `All ${n} songs are waiting.`,
+          }
+        : {
+            subject: `Game on: ${n} songs`,
+            line: `${n} songs${withWho}. Play each one whenever you like; the next song opens once everyone has answered.`,
+            waiting: "Song 1 is waiting.",
+          };
   return {
-    subject: `Game on: ${game.songCount} songs`,
+    subject: how.subject,
     ...layout({
       heading: `${name}, a new game is on`,
-      lines: [
-        `${game.songCount} songs${withWho}. Play each one whenever you like; the next song opens once everyone has answered.`,
-        "Song 1 is waiting.",
-      ],
+      lines: [how.line, how.waiting],
       buttonText: "Play song 1",
       url,
     }),
   };
 }
 
-export function nudgeEmail(name: string, url: string, fromName: string, position: number) {
+/** `left`: how many songs in the open round they still have to play, starting with song `position`. */
+export function nudgeEmail(name: string, url: string, fromName: string, to: { position: number; left: number }) {
   return {
     subject: `${fromName} nudged you`,
     ...layout({
       heading: `${name}, everyone's waiting on you`,
-      lines: [`${fromName} nudged you: song ${position} opens up the results as soon as you answer it.`],
-      buttonText: `Play song ${position}`,
+      lines: [
+        to.left > 1
+          ? `${fromName} nudged you: the game moves on once you've played ${to.left} more songs, starting with song ${to.position}.`
+          : `${fromName} nudged you: song ${to.position} moves the game on as soon as you answer it.`,
+      ],
+      buttonText: `Play song ${to.position}`,
       url,
     }),
   };

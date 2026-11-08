@@ -6,32 +6,37 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { CLIP_LENGTHS } from "@/lib/clips";
 import { cancelGame, createGame, resetAttempt } from "@/lib/games";
-import { GAME_LENGTHS, MAX_PLAYERS, MIN_PLAYERS } from "@/lib/rules";
+import { MAX_PLAYERS, MIN_PLAYERS } from "@/lib/rules";
+import { ALL_LENGTHS, GAME_MODES, MODES } from "@/lib/modes";
 
 // Every action here re-checks the admin: server actions are public endpoints.
 
 export type FormResult = { ok: boolean; message: string } | null;
 
-const gameSchema = z.object({
-  playerIds: z
-    .array(z.uuid())
-    .min(MIN_PLAYERS, "Pick at least one player.")
-    .max(MAX_PLAYERS, `A game has at most ${MAX_PLAYERS} players.`),
-  songCount: z.coerce.number().refine((n) => (GAME_LENGTHS as readonly number[]).includes(n), "Pick how many songs."),
-  clipLengthSec: z.coerce.number().refine((n) => (CLIP_LENGTHS as readonly number[]).includes(n), "Pick a clip length."),
-  wrongAnswers: z.enum(["random", "similar"]),
-  songPool: z.enum(["new", "mix"]),
-  filters: z.object({
-    decades: z.array(z.number().int().min(1900).max(2100).multipleOf(10)).max(30),
-    genres: z.array(z.string().trim().min(1).max(120)).max(100),
-    artists: z.array(z.string().trim().min(1).max(300)).max(200),
-  }),
-});
+const gameSchema = z
+  .object({
+    playerIds: z
+      .array(z.uuid())
+      .min(MIN_PLAYERS, "Pick at least one player.")
+      .max(MAX_PLAYERS, `A game has at most ${MAX_PLAYERS} players.`),
+    mode: z.enum(GAME_MODES),
+    songCount: z.coerce.number().refine((n) => ALL_LENGTHS.includes(n), "Pick how many songs."),
+    clipLengthSec: z.coerce.number().refine((n) => (CLIP_LENGTHS as readonly number[]).includes(n), "Pick a clip length."),
+    wrongAnswers: z.enum(["random", "similar"]),
+    songPool: z.enum(["new", "mix"]),
+    filters: z.object({
+      decades: z.array(z.number().int().min(1900).max(2100).multipleOf(10)).max(30),
+      genres: z.array(z.string().trim().min(1).max(120)).max(100),
+      artists: z.array(z.string().trim().min(1).max(300)).max(200),
+    }),
+  })
+  .refine((g) => MODES[g.mode].lengths.includes(g.songCount), { message: "Pick how many songs." });
 
 export async function createGameAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
   const admin = await requireAdmin();
   const parsed = gameSchema.safeParse({
     playerIds: [...new Set(formData.getAll("playerIds").map(String))],
+    mode: formData.get("mode") ?? "og",
     songCount: formData.get("songCount"),
     clipLengthSec: formData.get("clipLengthSec"),
     wrongAnswers: formData.get("wrongAnswers") ?? "random",

@@ -10,11 +10,7 @@ import { CreateGameForm } from "./CreateGameForm";
 import { ResultsGrid } from "./ResultsGrid";
 import { loadGameResults } from "@/lib/game-view";
 import { LiveRefresh } from "@/components/LiveRefresh";
-
-function names(list: string[]): string {
-  if (list.length <= 1) return list.join("");
-  return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
-}
+import { listNames, MODES, waitingOnText } from "@/lib/modes";
 
 export default async function GamesPage() {
   const me = await requireAdmin();
@@ -52,12 +48,15 @@ export default async function GamesPage() {
                   </span>
                   <span className="font-semibold">
                     {g.status === "active"
-                      ? `Song ${g.position} of ${g.songCount} · waiting on ${names(g.waitingOn)}`
+                      ? `${g.label} · waiting on ${waitingOnText(g.waitingOn, g.roundLength)}`
                       : g.leader
                         ? `${g.leader.name} ${g.status === "finished" ? "won" : "led"} with ${formatPoints(g.leader.points)}`
                         : `${g.songCount} songs`}
                   </span>
-                  <span className="text-sm text-muted">{names(g.players)}</span>
+                  <span className="text-sm text-muted">
+                    {listNames(g.players)}
+                    {g.mode !== "og" && ` · ${MODES[g.mode].name} mode`}
+                  </span>
                   <span className="ml-auto text-sm text-muted">
                     {g.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   </span>

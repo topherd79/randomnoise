@@ -5,11 +5,8 @@ import { Logo } from "@/components/Logo";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { SubmitButton } from "@/components/SubmitButton";
 import { logout } from "./actions";
+import { listNames, waitingOnText } from "@/lib/modes";
 
-function names(list: string[]): string {
-  if (list.length <= 1) return list.join("");
-  return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
-}
 
 export default async function Home() {
   const user = await requireUser();
@@ -42,18 +39,18 @@ export default async function Home() {
             return (
               <Link key={g.id} href={`/game/${g.id}`} className="block rounded-3xl bg-surface p-6 transition active:scale-[0.99]">
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">
-                  Song {g.position} of {g.songCount}
+                  {g.label}
                 </p>
                 <h1 className="mt-2 text-3xl font-bold leading-tight">
-                  {g.myTurn ? "Your turn." : `Waiting on ${names(g.waitingOn)}.`}
+                  {g.myTurn ? "Your turn." : `Waiting on ${waitingOnText(g.waitingOn, g.roundLength)}.`}
                 </h1>
-                {g.others.length > 0 && <p className="mt-2 text-muted">With {names(g.others)}</p>}
+                {g.others.length > 0 && <p className="mt-2 text-muted">With {listNames(g.others)}</p>}
                 <span
                   className={`mt-6 block rounded-full py-4 text-center text-lg font-semibold ${
                     g.myTurn ? "bg-accent text-accent-ink" : "bg-surface-2 text-ink"
                   }`}
                 >
-                  {g.myTurn ? `Play song ${g.position}` : "See the game"}
+                  {g.myTurn ? `Play song ${g.nextPosition}` : "See the game"}
                 </span>
               </Link>
             );

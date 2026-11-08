@@ -1,7 +1,6 @@
 // The game's rules and numbers, in one place so they're easy to tune after test games.
 // Shared by the server (scoring) and the play screen (reveal animation, points ticker).
 
-export const GAME_LENGTHS = [5, 10, 15, 20, 25] as const;
 export const MIN_PLAYERS = 1;
 export const MAX_PLAYERS = 5;
 
