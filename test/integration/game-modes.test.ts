@@ -8,9 +8,10 @@ vi.mock("next/server", () => ({ after: (fn: () => unknown) => void afterTasks.pu
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { gameSongs, games, users } from "@/db/schema";
-import { afterPlayerRemoved, answerSong, createGame, mayPlayClip, nudge, resetAttempt, startSong } from "@/lib/games";
+import { afterPlayerRemoved, answerSong, cancelGame, createGame, mayPlayClip, nudge, resetAttempt, startSong } from "@/lib/games";
 import { loadGameView, myGames } from "@/lib/game-view";
 import { gameProgress } from "@/lib/admin-games";
+import { catalogExport } from "@/lib/catalog-queries";
 import { NO_FILTERS } from "@/lib/song-filters";
 import { addUser, addVariedSongs, clipExists, resetAll } from "./helpers";
 
@@ -243,5 +244,24 @@ describe("The OG", () => {
     expect(view.label).toBe("Song 1 of 5");
     expect(view.latest?.picks.find((p) => p.userId === sarah)?.pending).toBe(true);
     expect(view.waitingOn.map((w) => w.name)).toEqual(["Sarah"]);
+  });
+});
+
+describe("catalog download", () => {
+  it("counts plays from finished and ended games only, never a game in progress", async () => {
+    const mike = await addUser("Mike");
+    await addVariedSongs(8);
+    const r = await createGame({ ...base, playerIds: [mike], songCount: 5, createdBy: mike });
+    if (!r.ok) throw new Error(r.error);
+    await play(mike, r.gameId, 1); // song 1 is complete, but the game is still on
+    const song1 = await songAt(r.gameId, 1);
+    const titleOf = async () => (await catalogExport()).find((s) => s.title === song1.song.title)!;
+    expect(await titleOf()).toMatchObject({ timesPlayed: 0, lastPlayed: null });
+    expect((await catalogExport()).every((s) => s.timesPlayed === 0)).toBe(true);
+
+    await cancelGame(r.gameId); // ended early: song 1 was heard, songs 2–5 weren't
+    expect((await titleOf()).timesPlayed).toBe(1);
+    expect((await titleOf()).lastPlayed).not.toBeNull();
+    expect((await catalogExport()).filter((s) => s.timesPlayed > 0)).toHaveLength(1);
   });
 });

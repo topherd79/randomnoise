@@ -48,3 +48,41 @@ export async function activeSongMeta(): Promise<SongMeta[]> {
     .where(eq(songs.active, true));
   return rows.map((r) => ({ ...r, played: Boolean(r.played) }));
 }
+
+/**
+ * Every song with everything the catalog knows about it, for the "Download
+ * catalog" spreadsheet. Play counts include finished and ended games only, so
+ * the file never shows which songs a game in progress is using (the admin
+ * plays too).
+ */
+export async function catalogExport() {
+  return db
+    .select({
+      title: songs.title,
+      artist: songs.artist,
+      album: songs.album,
+      year: songs.year,
+      genre: songs.genre,
+      active: songs.active,
+      lookupStatus: songs.lookupStatus,
+      needsReview: songs.needsReview,
+      spotifyUrl: songs.spotifyUrl,
+      appleMusicUrl: songs.appleMusicUrl,
+      clipMode: songs.clipMode,
+      clipSpots: songs.clipSpots,
+      clipLengthSec: songs.clipLengthSec,
+      customClipFile: songs.customClipFile,
+      durationSec: songs.durationSec,
+      createdAt: songs.createdAt,
+      originalFileName: songs.originalFileName,
+      timesPlayed: sql<number>`(
+        select count(*)::int from game_songs gs join games g on g.id = gs.game_id
+        where gs.song_id = "songs"."id" and g.status <> 'active' and gs.completed_at is not null
+      )`,
+      lastPlayed: sql<string | null>`(
+        select max(gs.completed_at)::text from game_songs gs join games g on g.id = gs.game_id
+        where gs.song_id = "songs"."id" and g.status <> 'active' and gs.completed_at is not null
+      )`,
+    })
+    .from(songs);
+}

@@ -74,11 +74,23 @@ export default async function CatalogPage() {
             switched-on songs no game has used, unless you choose to include songs from earlier games.
           </p>
         </div>
-        {review > 0 && (
-          <p className="rounded-full bg-danger/10 px-3 py-1.5 text-sm font-medium text-danger">
-            {review} {review === 1 ? "song needs" : "songs need"} a look
-          </p>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {review > 0 && (
+            <p className="rounded-full bg-danger/10 px-3 py-1.5 text-sm font-medium text-danger">
+              {review} {review === 1 ? "song needs" : "songs need"} a look
+            </p>
+          )}
+          {counts.total > 0 && (
+            <a
+              href="/api/admin/catalog"
+              download
+              title="Every song and its details, as a spreadsheet. Play counts include finished games only, never one in progress."
+              className="rounded-full bg-surface-2 px-4 py-2 text-sm font-semibold text-ink transition hover:bg-line"
+            >
+              Download catalog (CSV)
+            </a>
+          )}
+        </div>
       </section>
 
       <Uploader />
