@@ -63,7 +63,8 @@ in progress.
   console. Note: the Claude cloud environment may have a real `RESEND_API_KEY` in its environment —
   unset it (`env -u RESEND_API_KEY …`) when running the app for tests so no real email goes out.
 - **Song details lookup:** Apple's free song search (`src/lib/lookup.ts`), about 20 searches a
-  minute, so the catalog page runs lookups one at a time. song.link's free API is gone; Spotify links
+  minute, so the catalog page runs lookups one at a time; a miss is retried with the title alone
+  after a pause, and "Try again" on the catalog page re-queues songs that weren't found. song.link's free API is gone; Spotify links
   are exact only if `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` are set, otherwise a search link.
   Songs looked up before the keys were set get exact links from the catalog page's "Find exact
   Spotify links" (`fillSpotifyLinkFor` in `src/lib/catalog.ts`, which also fills past games' snapshots).
@@ -72,6 +73,13 @@ in progress.
 - **Game rules and numbers** (reveal time, cutoff, points, guessing penalty) are all in
   `src/lib/rules.ts`; game modes and their lengths in `src/lib/modes.ts`. The server keeps the clock (`answers.started_at` is set when the clip actually
   starts playing) and scores every answer; the phone is never told which choice is right.
+- **Copies of a song** (same title and artist after `songKey()` in `src/lib/normalize.ts`, which
+  ignores "(Remastered)", "feat. X" and the like) count as one song: a game draws at most one copy,
+  and a copy of a played song counts as played (`usedSongs()` in `src/lib/catalog-queries.ts`). The
+  catalog's "Show: Same song more than once" lists them. Answer choices show `cleanTitle()`, which
+  hides release labels ("(2015 Remaster)", "(Album Version)") but keeps "(Live …)", "(Acoustic)".
+- **Genres** go through `canonicalGenre()` (`src/lib/genres.ts`) on upload, lookup and edit, so
+  French-tagged files ("Alternatif et Indé") don't split a genre in the start-a-game filter.
 - **Switched-off songs** (`songs.active = false`) stay in the catalog but new games leave them out
   entirely: never drawn, never a wrong answer (`createGame` in `src/lib/games.ts`). Games already
   created are unaffected. Clip lengths are `CLIP_LENGTHS` in `src/lib/clips.ts` (5/10/20/30 s).
@@ -115,7 +123,7 @@ npm run typecheck && npm run lint && npm test && npm run build
 - GitHub Actions (`.github/workflows/ci.yml`) runs all four on every pull request and push to `main`.
 - Pure logic lives in modules without server-only imports so it can be unit tested: `rules.ts`,
   `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`,
-  `modes.ts` (rounds per game mode).
+  `modes.ts` (rounds per game mode), `genres.ts`, `csv.ts`.
 - **Artist limit:** a game has at most one song per artist for every five songs
   (`maxSongsPerArtist` in `src/lib/draw.ts`); it never blocks a game, it spreads artists as evenly
   as the catalog allows.
