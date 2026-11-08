@@ -1,0 +1,1 @@
+ALTER TABLE "games" ADD COLUMN "mode" text DEFAULT 'og' NOT NULL;

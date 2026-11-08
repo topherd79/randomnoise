@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { CLIP_LENGTHS } from "@/lib/clips";
-import { GAME_LENGTHS, MAX_PLAYERS } from "@/lib/rules";
+import { MAX_PLAYERS } from "@/lib/rules";
+import { GAME_MODES, MODES, type GameMode } from "@/lib/modes";
 import { createGameAction, type FormResult } from "./actions";
 import { matchesFilters, type SongMeta } from "@/lib/song-filters";
 import { SongFilterPicker, type FilterState } from "./SongFilterPicker";
@@ -39,7 +40,10 @@ const NO_FILTER_STATE: FilterState = { decades: new Set(), genres: new Set(), ar
 export function CreateGameForm({ players, songs }: { players: Player[]; songs: SongMeta[] }) {
   const [result, formAction] = useActionState<FormResult, FormData>(createGameAction, null);
   const [picked, setPicked] = useState<Set<string>>(() => new Set(players.filter((p) => p.isMe).map((p) => p.id)));
-  const shortest = GAME_LENGTHS[0];
+  // The mode decides how many songs open at a time, and which game lengths there are.
+  const [mode, setMode] = useState<GameMode>("og");
+  const lengths = MODES[mode].lengths;
+  const shortest = lengths[0];
 
   // Filters narrow which songs the game draws from; the counts below follow them live.
   const [filter, setFilter] = useState<FilterState>(NO_FILTER_STATE);
@@ -55,10 +59,12 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
   const catalogSize = matching.length;
   const unplayed = matching.filter((s) => !s.played).length;
 
-  const fitting = (p: Pool): number[] => GAME_LENGTHS.filter((n) => n <= (p === "mix" ? catalogSize : unplayed));
-  const pickCount = (list: number[]) => (list.includes(10) ? 10 : (list[list.length - 1] ?? shortest));
+  const fitting = (p: Pool, m: GameMode = mode): number[] =>
+    MODES[m].lengths.filter((n) => n <= (p === "mix" ? catalogSize : unplayed));
+  const pickCount = (list: number[], m: GameMode = mode) =>
+    list.includes(MODES[m].defaultLength) ? MODES[m].defaultLength : (list[list.length - 1] ?? MODES[m].lengths[0]);
   // If there aren't enough new songs left, start on "include earlier songs" so you're never stuck.
-  const [autoMix] = useState(() => songs.filter((s) => !s.played).length < shortest);
+  const [autoMix] = useState(() => songs.filter((s) => !s.played).length < MODES.og.lengths[0]);
   const [pool, setPool] = useState<Pool>(() => (autoMix ? "mix" : "new"));
   const fits = fitting(pool);
   const [chosenCount, setSongCount] = useState<number>(() => pickCount(fits));
@@ -75,8 +81,27 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
     if (!next.includes(songCount)) setSongCount(pickCount(next));
   }
 
+  function chooseMode(m: GameMode) {
+    setMode(m);
+    // Keep the length if the new mode has it (10 in The OG → 10 in All songs), else that mode's usual one.
+    const next = fitting(pool, m);
+    setSongCount(next.includes(songCount) ? songCount : pickCount(next, m));
+  }
+
   return (
     <form action={formAction} className="flex flex-col gap-6 rounded-2xl bg-surface p-5">
+      <fieldset>
+        <legend className="text-sm font-semibold text-muted">Game mode</legend>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {GAME_MODES.map((m) => (
+            <Option key={m} name="mode" value={m} checked={mode === m} onChange={() => chooseMode(m)}>
+              {MODES[m].name}
+            </Option>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-muted">{MODES[mode].description}</p>
+      </fieldset>
+
       <fieldset>
         <legend className="text-sm font-semibold text-muted">
           Players ({picked.size} of up to {MAX_PLAYERS})
@@ -132,7 +157,7 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
       <fieldset>
         <legend className="text-sm font-semibold text-muted">Songs</legend>
         <div className="mt-2 flex flex-wrap gap-2">
-          {GAME_LENGTHS.map((n) => (
+          {lengths.map((n) => (
             <Option key={n} name="songCount" value={String(n)} checked={songCount === n} disabled={!fits.includes(n)} onChange={() => setSongCount(n)}>
               {n}
             </Option>

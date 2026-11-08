@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { copyFile } from "node:fs/promises";
 import { after } from "next/server";
-import { and, count, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, between, count, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   answers,
@@ -13,6 +13,7 @@ import {
   songs,
   users,
   type Choice,
+  type GameMode,
   type SongSnapshot,
   type WrongAnswerMode,
 } from "@/db/schema";
@@ -25,6 +26,7 @@ import { pickClipStart } from "./clips";
 import { gameOnEmail, gameOverEmail, nudgeEmail, sendEmail } from "./email";
 import { maxSongsPerArtist, pickSpreadOut, pickWrongAnswers, shuffle } from "./draw";
 import { scoreAnswer } from "./rules";
+import { inRound, MODES, nextPosition, openRound, songsLeft } from "./modes";
 import { ensureFolder, filePath, removeFile } from "./storage";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -58,11 +60,15 @@ export async function createGame(opts: {
   songCount: number;
   clipLengthSec: number;
   wrongAnswers: WrongAnswerMode;
+  mode?: GameMode;
   songPool?: SongPool;
   filters?: SongFilters;
   createdBy: string;
 }): Promise<Result<{ gameId: string }>> {
-  const { playerIds, songCount, clipLengthSec, wrongAnswers, songPool = "new", filters = NO_FILTERS, createdBy } = opts;
+  const { playerIds, songCount, clipLengthSec, wrongAnswers, mode = "og", songPool = "new", filters = NO_FILTERS, createdBy } = opts;
+  if (!MODES[mode].lengths.includes(songCount)) {
+    return { ok: false, error: `${MODES[mode].name} games are ${MODES[mode].lengths.join(", ")} songs long.` };
+  }
   const filtered = hasFilters(filters);
   const matching = filterConditions(filters);
 
@@ -162,7 +168,7 @@ export async function createGame(opts: {
     const gameId = await db.transaction(async (tx) => {
       const [game] = await tx
         .insert(games)
-        .values({ songCount, clipLengthSec, wrongAnswers, createdBy })
+        .values({ songCount, clipLengthSec, wrongAnswers, mode, createdBy })
         .returning({ id: games.id });
       await tx.insert(gamePlayers).values(playerIds.map((userId) => ({ gameId: game.id, userId })));
       await tx.insert(gameSongs).values(rows.map((r) => ({ ...r, gameId: game.id })));
@@ -183,7 +189,7 @@ export async function createGame(opts: {
 // Playing
 // ---------------------------------------------------------------------------
 
-/** The round a player may act on right now: they're in the game and it's the current song. */
+/** A game song, if the player is in its game. */
 async function playableRound(userId: string, gameSongId: string) {
   const [row] = await db
     .select({ gs: gameSongs, game: games })
@@ -196,12 +202,60 @@ async function playableRound(userId: string, gameSongId: string) {
   return row;
 }
 
+type GameRow = typeof games.$inferSelect;
+
+/**
+ * The open round of a game, and which of its songs each player has answered.
+ * With The OG the round is the one current song; with 3 songs it's three; with
+ * All songs it's the whole game.
+ */
+export async function roundState(game: Pick<GameRow, "id" | "mode" | "songCount" | "currentPosition">) {
+  const round = openRound(game.mode, game.songCount, game.currentPosition);
+  const rows = await db
+    .select({ userId: answers.userId, position: gameSongs.position })
+    .from(answers)
+    .innerJoin(gameSongs, eq(gameSongs.id, answers.gameSongId))
+    .where(and(eq(gameSongs.gameId, game.id), isNotNull(answers.answeredAt), between(gameSongs.position, round.start, round.end)));
+  const byPlayer = new Map<string, Set<number>>();
+  for (const r of rows) {
+    if (!byPlayer.has(r.userId)) byPlayer.set(r.userId, new Set());
+    byPlayer.get(r.userId)!.add(r.position);
+  }
+  const answered = (userId: string): ReadonlySet<number> => byPlayer.get(userId) ?? new Set<number>();
+  return { round, answered };
+}
+
+/**
+ * Whether a player may fetch a clip: they're in its game, and it's a song
+ * they've reached (their next song or one they've answered), never a song
+ * ahead of that, even when several are open at once.
+ */
+export async function mayPlayClip(userId: string, clipFile: string): Promise<boolean> {
+  const [row] = await db
+    .select({ position: gameSongs.position, game: games })
+    .from(gameSongs)
+    .innerJoin(games, eq(games.id, gameSongs.gameId))
+    .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, userId)))
+    .where(eq(gameSongs.clipFile, clipFile))
+    .limit(1);
+  if (!row) return false;
+  if (row.game.status !== "active") return true; // (an ended game's clips are deleted anyway)
+  const { round, answered } = await roundState(row.game);
+  if (row.position < round.start) return true;
+  if (!inRound(round, row.position)) return false;
+  const next = nextPosition(round, answered(userId));
+  return next === null || row.position <= next;
+}
+
 /** Tapping Play: the server's clock starts now. Calling it again keeps the original start. */
 export async function startSong(userId: string, gameSongId: string): Promise<Result<{ startedAt: number }>> {
-  const round = await playableRound(userId, gameSongId);
-  if (!round) return { ok: false, error: "That song isn't part of your game." };
-  const { gs, game } = round;
-  if (game.status !== "active" || gs.position !== game.currentPosition || gs.completedAt) {
+  const row = await playableRound(userId, gameSongId);
+  if (!row) return { ok: false, error: "That song isn't part of your game." };
+  const { gs, game } = row;
+  if (game.status !== "active" || gs.completedAt) return { ok: false, error: "This song isn't being played right now." };
+  // Only the player's next song: the lowest one in the open round they haven't answered.
+  const { round, answered } = await roundState(game);
+  if (!inRound(round, gs.position) || nextPosition(round, answered(userId)) !== gs.position) {
     return { ok: false, error: "This song isn't being played right now." };
   }
   await db.insert(answers).values({ gameSongId, userId }).onConflictDoNothing();
@@ -227,9 +281,9 @@ export async function answerSong(
   gameSongId: string,
   choiceSongId: string,
 ): Promise<Result<{ result: AnswerResult }>> {
-  const round = await playableRound(userId, gameSongId);
-  if (!round) return { ok: false, error: "That song isn't part of your game." };
-  const { gs, game } = round;
+  const row = await playableRound(userId, gameSongId);
+  if (!row) return { ok: false, error: "That song isn't part of your game." };
+  const { gs, game } = row;
 
   const [existing] = await db
     .select()
@@ -248,7 +302,8 @@ export async function answerSong(
       },
     };
   }
-  if (game.status !== "active" || gs.position !== game.currentPosition || gs.completedAt) {
+  const round = openRound(game.mode, game.songCount, game.currentPosition);
+  if (game.status !== "active" || !inRound(round, gs.position) || gs.completedAt) {
     return { ok: false, error: "This song isn't being played right now." };
   }
   if (!existing) return { ok: false, error: "Tap Play first." };
@@ -265,18 +320,19 @@ export async function answerSong(
     .returning({ id: answers.id });
   if (!saved.length) return answerSong(userId, gameSongId, choiceSongId); // a double tap: return the first answer
 
-  await completeRoundIfDone(gs.id);
-  // Others waiting on this song see "waiting on" shrink (or the results) without refreshing.
+  await completeSongIfDone(gs.id);
+  // Others see their "waiting on" list shrink and this pick appear (once they've
+  // answered the song themselves) without refreshing.
   await publishGameUpdate(game.id);
   return { ok: true, result: { correct, points, elapsedMs, rightSongId: gs.songId, choiceSongId } };
 }
 
 /**
- * When every player has answered the current song: mark it complete (once,
- * even if two answers land together), move the game on or finish it, and
- * email everyone.
+ * When every player has answered a song: mark it complete (once, even if two
+ * answers land together), delete its clip, and move the game on if that
+ * finished the round.
  */
-export async function completeRoundIfDone(gameSongId: string): Promise<void> {
+export async function completeSongIfDone(gameSongId: string): Promise<void> {
   const [row] = await db
     .select({ gs: gameSongs, game: games })
     .from(gameSongs)
@@ -305,24 +361,48 @@ export async function completeRoundIfDone(gameSongId: string): Promise<void> {
 
   // Everyone has heard this clip and nobody can play it again: free the space.
   await removeFile("clips", gs.clipFile).catch((err) => console.error("Couldn't delete clip", gs.clipFile, err));
-
-  const last = gs.position >= game.songCount;
-  await db
-    .update(games)
-    .set(last ? { status: "finished", finishedAt: new Date() } : { currentPosition: gs.position + 1 })
-    .where(and(eq(games.id, game.id), eq(games.status, "active")));
+  await advanceIfRoundDone(game.id);
   await publishGameUpdate(game.id);
-  // One email at the end with the full results (no email after every song;
-  // the waiting screens update live instead).
-  if (last) after(() => emailPlayers(game.id, { kind: "over" }));
 }
 
-/** Total points from completed songs, best first. */
+/**
+ * Once every song in the open round is complete, open the next round, or
+ * finish the game (with one results email) if that was the last.
+ */
+async function advanceIfRoundDone(gameId: string): Promise<void> {
+  const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (!game || game.status !== "active") return;
+  const round = openRound(game.mode, game.songCount, game.currentPosition);
+  const [{ open }] = await db
+    .select({ open: count() })
+    .from(gameSongs)
+    .where(and(eq(gameSongs.gameId, gameId), between(gameSongs.position, round.start, round.end), isNull(gameSongs.completedAt)));
+  if (open > 0) return;
+
+  const last = round.end >= game.songCount;
+  // Only the first caller moves the game on (two songs can complete at the same moment).
+  const moved = await db
+    .update(games)
+    .set(last ? { status: "finished", finishedAt: new Date() } : { currentPosition: round.end + 1 })
+    .where(and(eq(games.id, gameId), eq(games.status, "active"), eq(games.currentPosition, round.start)))
+    .returning({ id: games.id });
+  if (!moved.length) return;
+  await publishGameUpdate(gameId);
+  // One email at the end with the full results (no email after every song;
+  // the waiting screens update live instead).
+  if (last) after(() => emailPlayers(gameId, { kind: "over" }));
+}
+
+/**
+ * Total points from completed songs (ones every player has answered), best
+ * first, so the standings always compare like with like.
+ */
 export async function standings(gameId: string) {
-  const rows = await db.execute<{ user_id: string; name: string; points: string; correct: string }>(sql`
+  const rows = await db.execute<{ user_id: string; name: string; points: string; correct: string; played: string }>(sql`
     select u.id as user_id, u.name,
       coalesce(sum(a.points) filter (where gs.completed_at is not null), 0) as points,
-      count(a.id) filter (where gs.completed_at is not null and a.correct) as correct
+      count(a.id) filter (where gs.completed_at is not null and a.correct) as correct,
+      count(a.id) filter (where a.answered_at is not null) as played
     from game_players gp
     join users u on u.id = gp.user_id
     left join game_songs gs on gs.game_id = gp.game_id
@@ -331,7 +411,14 @@ export async function standings(gameId: string) {
     group by u.id, u.name
     order by points desc, u.name asc
   `);
-  return rows.rows.map((r) => ({ userId: r.user_id, name: r.name, points: Number(r.points), correct: Number(r.correct) }));
+  return rows.rows.map((r) => ({
+    userId: r.user_id,
+    name: r.name,
+    points: Number(r.points),
+    correct: Number(r.correct),
+    /** Songs this player has answered, including ones others haven't yet (not counted in points). */
+    played: Number(r.played),
+  }));
 }
 
 export type Standing = Awaited<ReturnType<typeof standings>>[number];
@@ -342,31 +429,44 @@ export type Standing = Awaited<ReturnType<typeof standings>>[number];
 
 const NUDGE_EVERY_HOURS = 6;
 
-export async function nudge(fromUserId: string, gameSongId: string, toUserId: string): Promise<Result<{ message: string }>> {
+export async function nudge(fromUserId: string, gameId: string, toUserId: string): Promise<Result<{ message: string }>> {
   if (fromUserId === toUserId) return { ok: false, error: "You can't nudge yourself." };
-  const round = await playableRound(fromUserId, gameSongId);
-  if (!round) return { ok: false, error: "That song isn't part of your game." };
-  const { gs, game } = round;
-  if (game.status !== "active" || gs.position !== game.currentPosition || gs.completedAt) {
-    return { ok: false, error: "This song is already done." };
-  }
+  const [row] = await db
+    .select({ game: games })
+    .from(games)
+    .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, fromUserId)))
+    .where(eq(games.id, gameId))
+    .limit(1);
+  if (!row) return { ok: false, error: "That isn't your game." };
+  const { game } = row;
+  if (game.status !== "active") return { ok: false, error: "This game is over." };
+
   const [target] = await db
-    .select({ name: users.name, email: users.email, answeredAt: answers.answeredAt })
+    .select({ name: users.name, email: users.email })
     .from(gamePlayers)
     .innerJoin(users, eq(users.id, gamePlayers.userId))
-    .leftJoin(answers, and(eq(answers.gameSongId, gs.id), eq(answers.userId, users.id)))
     .where(and(eq(gamePlayers.gameId, game.id), eq(gamePlayers.userId, toUserId)))
     .limit(1);
   if (!target) return { ok: false, error: "They aren't in this game." };
-  if (target.answeredAt) return { ok: false, error: `${target.name} has already answered.` };
+  const { round, answered } = await roundState(game);
+  const next = nextPosition(round, answered(toUserId));
+  if (next === null) return { ok: false, error: `${target.name} has already played ${round.start === round.end ? "this song" : "these songs"}.` };
+  const left = songsLeft(round, answered(toUserId));
 
+  // Nudges are kept against the round's first song, so the limit is per round.
+  const [roundSong] = await db
+    .select({ id: gameSongs.id })
+    .from(gameSongs)
+    .where(and(eq(gameSongs.gameId, game.id), eq(gameSongs.position, round.start)))
+    .limit(1);
+  if (!roundSong) return { ok: false, error: "This game has no song to play right now." };
   const since = new Date(Date.now() - NUDGE_EVERY_HOURS * 3600_000);
   const [recent] = await db
     .select({ id: nudges.id })
     .from(nudges)
     .where(
       and(
-        eq(nudges.gameSongId, gs.id),
+        eq(nudges.gameSongId, roundSong.id),
         eq(nudges.fromUserId, fromUserId),
         eq(nudges.toUserId, toUserId),
         gt(nudges.createdAt, since),
@@ -375,12 +475,12 @@ export async function nudge(fromUserId: string, gameSongId: string, toUserId: st
     .limit(1);
   if (recent) return { ok: false, error: `You nudged ${target.name} recently. Give it a few hours.` };
 
-  await db.insert(nudges).values({ gameSongId: gs.id, fromUserId, toUserId });
+  await db.insert(nudges).values({ gameSongId: roundSong.id, fromUserId, toUserId });
   const [from] = await db.select({ name: users.name }).from(users).where(eq(users.id, fromUserId)).limit(1);
   after(async () => {
     try {
       const url = await createLoginUrl(toUserId, `/game/${game.id}`);
-      await sendEmail({ to: target.email, ...nudgeEmail(target.name, url, from?.name ?? "Someone", gs.position) });
+      await sendEmail({ to: target.email, ...nudgeEmail(target.name, url, from?.name ?? "Someone", { position: next, left }) });
     } catch (err) {
       console.error("Nudge email failed", err);
     }
@@ -388,12 +488,35 @@ export async function nudge(fromUserId: string, gameSongId: string, toUserId: st
   return { ok: true, message: `Nudged ${target.name}.` };
 }
 
-/** Admin: clear a player's attempt at the current song (for genuine accidents, like a phone call). */
+/**
+ * Admin: clear a player's attempt at a song in the open round (for genuine
+ * accidents, like a phone call), so they play it again from the start. Any
+ * song after it that they had started but not answered is cleared too, so its
+ * clock doesn't keep running while they replay this one.
+ */
 export async function resetAttempt(gameSongId: string, userId: string): Promise<Result> {
-  const [gs] = await db.select().from(gameSongs).where(eq(gameSongs.id, gameSongId)).limit(1);
-  if (!gs) return { ok: false, error: "That song isn't in a game." };
+  const [row] = await db
+    .select({ gs: gameSongs, game: games })
+    .from(gameSongs)
+    .innerJoin(games, eq(games.id, gameSongs.gameId))
+    .where(eq(gameSongs.id, gameSongId))
+    .limit(1);
+  if (!row) return { ok: false, error: "That song isn't in a game." };
+  const { gs, game } = row;
   if (gs.completedAt) return { ok: false, error: "Everyone has answered this song, so it can't be reset." };
-  await db.delete(answers).where(and(eq(answers.gameSongId, gameSongId), eq(answers.userId, userId)));
+  const round = openRound(game.mode, game.songCount, game.currentPosition);
+  const laterUnanswered = db
+    .select({ id: gameSongs.id })
+    .from(gameSongs)
+    .where(and(eq(gameSongs.gameId, game.id), gt(gameSongs.position, gs.position), lte(gameSongs.position, round.end)));
+  await db
+    .delete(answers)
+    .where(
+      and(
+        eq(answers.userId, userId),
+        or(eq(answers.gameSongId, gameSongId), and(inArray(answers.gameSongId, laterUnanswered), isNull(answers.answeredAt))),
+      ),
+    );
   await publishGameUpdate(gs.gameId);
   return { ok: true };
 }
@@ -422,12 +545,14 @@ export async function afterPlayerRemoved(gameIds: string[]): Promise<void> {
       await cancelGame(gameId);
       continue;
     }
-    const [gs] = await db
+    const round = openRound(game.mode, game.songCount, game.currentPosition);
+    const open = await db
       .select({ id: gameSongs.id })
       .from(gameSongs)
-      .where(and(eq(gameSongs.gameId, gameId), eq(gameSongs.position, game.currentPosition)))
-      .limit(1);
-    if (gs) await completeRoundIfDone(gs.id);
+      .where(and(eq(gameSongs.gameId, gameId), gte(gameSongs.position, round.start), lte(gameSongs.position, round.end)))
+      .orderBy(gameSongs.position);
+    for (const gs of open) await completeSongIfDone(gs.id);
+    await advanceIfRoundDone(gameId);
     await publishGameUpdate(gameId); // the "waiting on" list changed
   }
 }
@@ -459,7 +584,7 @@ async function emailPlayers(gameId: string, what: GameEmail): Promise<void> {
         const others = players.filter((o) => o.id !== p.id).map((o) => o.name);
         const email =
           what.kind === "start"
-            ? gameOnEmail(p.name, url, { songCount: game.songCount, others })
+            ? gameOnEmail(p.name, url, { songCount: game.songCount, mode: game.mode, others })
             : gameOverEmail(p.name, p.id, url, results!);
         await sendEmail({ to: p.email, ...email });
       } catch (err) {

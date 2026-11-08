@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { answerSong, nudge, startSong, type AnswerResult } from "@/lib/games";
 
 // Server actions are public endpoints: each one checks the player, and the game
-// functions check that they're in the game and on the current song.
+// functions check that they're in the game and that the song is open to them.
 
 export async function startSongAction(gameSongId: string): Promise<{ ok: true; startedAt: number } | { ok: false; error: string }> {
   const user = await requireUser();
@@ -19,8 +19,8 @@ export async function answerSongAction(
   return answerSong(user.id, String(gameSongId), String(choiceSongId));
 }
 
-export async function nudgeAction(gameSongId: string, toUserId: string): Promise<{ ok: boolean; message: string }> {
+export async function nudgeAction(gameId: string, toUserId: string): Promise<{ ok: boolean; message: string }> {
   const user = await requireUser();
-  const r = await nudge(user.id, String(gameSongId), String(toUserId));
+  const r = await nudge(user.id, String(gameId), String(toUserId));
   return r.ok ? { ok: true, message: r.message } : { ok: false, message: r.error };
 }

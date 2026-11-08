@@ -1,5 +1,5 @@
 import type { Standing } from "@/lib/games";
-import type { ResultsView, SongInfo } from "@/lib/game-view";
+import type { Pick, ResultsView, SongInfo } from "@/lib/game-view";
 import { formatPoints, formatSeconds } from "@/lib/rules";
 
 export function Cover({ url, size = 72 }: { url: string | null; size?: number }) {
@@ -51,7 +51,39 @@ function pointsText(points: number | null) {
   return points > 0 ? `+${formatPoints(points)}` : formatPoints(points);
 }
 
-/** Everyone's picks for one song. */
+/** Everyone's picks for one song; players who haven't answered it yet show as "not played yet". */
+export function PicksList({ picks }: { picks: Pick[] }) {
+  return (
+    <ul className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
+      {picks.map((p) => (
+        <li key={p.userId} className="flex items-center gap-3 px-4 py-3">
+          <span
+            className={`flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+              p.correct ? "bg-accent text-accent-ink" : p.label ? "bg-danger/20 text-danger" : "bg-surface-2 text-muted"
+            }`}
+            aria-label={p.correct ? "right" : p.label ? "wrong" : p.pending ? "not played yet" : "no answer"}
+          >
+            {p.correct ? "✓" : p.label ? "✕" : "–"}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className={`block font-semibold ${p.pending ? "text-muted" : ""}`}>{p.name}</span>
+            <span className="block truncate text-sm text-muted">
+              {p.pending ? "Not played yet" : (p.label ?? "No answer")}
+              {p.elapsedMs !== null && ` · ${formatSeconds(p.elapsedMs)}`}
+            </span>
+          </span>
+          {!p.pending && (
+            <span className={`font-bold tabular-nums ${p.points && p.points > 0 ? "text-accent" : p.points && p.points < 0 ? "text-danger" : "text-muted"}`}>
+              {pointsText(p.points)}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** One song with everyone's picks. */
 export function ResultsCard({ results, title }: { results: ResultsView; title?: string }) {
   return (
     <section className="flex flex-col gap-3">
@@ -59,35 +91,26 @@ export function ResultsCard({ results, title }: { results: ResultsView; title?: 
         {title ?? `Song ${results.position} results`}
       </h2>
       <SongCard song={results.song} />
-      <ul className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
-        {results.picks.map((p) => (
-          <li key={p.userId} className="flex items-center gap-3 px-4 py-3">
-            <span
-              className={`flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                p.correct ? "bg-accent text-accent-ink" : p.label ? "bg-danger/20 text-danger" : "bg-surface-2 text-muted"
-              }`}
-              aria-label={p.correct ? "right" : p.label ? "wrong" : "no answer"}
-            >
-              {p.correct ? "✓" : p.label ? "✕" : "–"}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block font-semibold">{p.name}</span>
-              <span className="block truncate text-sm text-muted">
-                {p.label ?? "No answer"}
-                {p.elapsedMs !== null && ` · ${formatSeconds(p.elapsedMs)}`}
-              </span>
-            </span>
-            <span className={`font-bold tabular-nums ${p.points && p.points > 0 ? "text-accent" : p.points && p.points < 0 ? "text-danger" : "text-muted"}`}>
-              {pointsText(p.points)}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <PicksList picks={results.picks} />
     </section>
   );
 }
 
-export function StandingsCard({ standings, title = "Standings" }: { standings: Standing[]; title?: string }) {
+/**
+ * Points count only songs every player has answered, so the order is always a
+ * fair comparison; `played` shows how far each player has got when songs open
+ * several at a time.
+ */
+export function StandingsCard({
+  standings,
+  title = "Standings",
+  played,
+}: {
+  standings: Standing[];
+  title?: string;
+  /** Show "6 of 9 played" for each player (modes with several songs open). */
+  played?: { songCount: number };
+}) {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">{title}</h2>
@@ -95,7 +118,14 @@ export function StandingsCard({ standings, title = "Standings" }: { standings: S
         {standings.map((s, i) => (
           <li key={s.userId} className="flex items-center gap-3 px-4 py-3">
             <span className="w-6 text-center font-bold text-muted tabular-nums">{i + 1}</span>
-            <span className="flex-1 font-semibold">{s.name}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold">{s.name}</span>
+              {played && (
+                <span className="block text-xs text-muted">
+                  {s.played} of {played.songCount} played
+                </span>
+              )}
+            </span>
             <span className="text-sm text-muted">{s.correct} right</span>
             <span className="w-16 text-right font-bold tabular-nums">{formatPoints(s.points)}</span>
           </li>

@@ -7,6 +7,7 @@ import { ResultsGrid } from "../ResultsGrid";
 import { formatPoints } from "@/lib/rules";
 import { GameControls, ResetButton } from "./GameControls";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { MODES } from "@/lib/modes";
 
 function since(d: Date) {
   const min = Math.round((Date.now() - d.getTime()) / 60000);
@@ -22,7 +23,8 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const progress = await gameProgress(id);
   if (!progress) notFound();
-  const { game, players, standings, currentGameSongId } = progress;
+  const { game, players, standings, label, roundLength } = progress;
+  const several = roundLength > 1;
   const active = game.status === "active";
   // Song-by-song results only once the game is over (the admin plays too).
   const results = active ? null : (await loadGameResults([game.id])).get(game.id);
@@ -36,10 +38,10 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
 
       <header>
         <h1 className="text-2xl font-bold">
-          {active ? `Song ${game.currentPosition} of ${game.songCount}` : game.status === "finished" ? "Finished" : "Ended early"}
+          {active ? label : game.status === "finished" ? "Finished" : "Ended early"}
         </h1>
         <p className="mt-1 text-muted">
-          Started {game.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ·{" "}
+          Started {game.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {MODES[game.mode].name} mode ·{" "}
           {game.songCount} songs · {game.clipLengthSec}-second clips ·{" "}
           {game.wrongAnswers === "similar" ? "similar wrong answers" : "random wrong answers"}
         </p>
@@ -48,10 +50,10 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
       <div className="grid gap-10 lg:grid-cols-[1fr_320px]">
         {active ? (
           <section>
-            <h2 className="text-lg font-bold">This song</h2>
+            <h2 className="text-lg font-bold">{several ? "Open songs" : "This song"}</h2>
             <p className="mt-1 text-sm text-muted">
               If someone&apos;s attempt went wrong by accident (a phone call, a crash), reset it and they can play the
-              song again from the start.
+              song again from the start.{several && " Reset clears the song they're on, or their latest answer."}
             </p>
             <ul className="mt-4 divide-y divide-line overflow-hidden rounded-2xl border border-line">
               {players.map((p) => (
@@ -59,13 +61,17 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
                   <span className="w-32 font-semibold">{p.name}</span>
                   <span className="flex-1 text-sm text-muted">
                     {p.state === "answered"
-                      ? "Answered"
+                      ? several
+                        ? `Played all ${roundLength}`
+                        : "Answered"
                       : p.state === "playing"
-                        ? `Tapped Play ${p.startedAt ? since(p.startedAt) : ""}, hasn't answered`
-                        : "Hasn't started"}
+                        ? `${several ? `On song ${p.nextPosition}: t` : "T"}apped Play ${p.startedAt ? since(p.startedAt) : ""}, hasn't answered`
+                        : several
+                          ? `${p.left} ${p.left === 1 ? "song" : "songs"} left, next is song ${p.nextPosition}`
+                          : "Hasn't started"}
                   </span>
-                  {p.state !== "waiting" && currentGameSongId && (
-                    <ResetButton gameId={game.id} gameSongId={currentGameSongId} userId={p.userId} name={p.name} />
+                  {p.resetGameSongId && (
+                    <ResetButton gameId={game.id} gameSongId={p.resetGameSongId} userId={p.userId} name={p.name} />
                   )}
                 </li>
               ))}
@@ -94,7 +100,7 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
                 </li>
               ))}
             </ol>
-            <p className="mt-2 text-xs text-muted">Counts finished songs only.</p>
+            <p className="mt-2 text-xs text-muted">Counts songs every player has answered.</p>
           </div>
           {active && <GameControls gameId={game.id} />}
         </aside>

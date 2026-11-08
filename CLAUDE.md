@@ -10,17 +10,20 @@ https://claude.ai/artifact/H477Nc2h2RAwzVDDH8VHva — read it before changing ga
 
 ## The game in one paragraph
 
-The admin uploads songs (full mp3s) into a running catalog. A game draws 5/10/15/20/25 unplayed songs
-at random (only songs switched on in the catalog); the admin can choose "Include songs from earlier games",
+The admin uploads songs (full mp3s) into a running catalog. A game draws its songs at random from
+unplayed songs (only songs switched on in the catalog); the admin can choose "Include songs from earlier games",
 which tops up with songs played longest ago (`songPool` in `createGame`). Optional filters (decades, genres,
 artists; `src/lib/song-filters.ts`) narrow the draw: any option within a filter, all filters together;
 wrong answers then come from the filtered set when it has enough songs. For each song, a player taps Play: a short clip and the answer clock start together, four
 "Title – Artist" choices (1 right, 3 random other catalog songs) reveal letter by letter and finish
 together, and a faster correct answer scores more (1,000 sliding to 100; a wrong answer loses a third
 of what a right one would have earned, so guessing is worth zero on average). Players
-answer on their own time; the group moves to the next song only when everyone has answered, then
-sees everyone's picks and the standings. The admin also plays, so admin screens never show the
-songs of a game in progress.
+answer on their own time. Songs open in rounds, by game mode (`src/lib/modes.ts`): **The OG** one
+song at a time (5–25 songs), **3 songs** three at a time (6/9/15/18 songs), **All songs** every song
+open from the start (5–25 songs). The next round opens only when everyone has answered every song in
+this one. Once you've answered a song you see everyone's picks for it so far; standings count only
+songs everyone has answered. The admin also plays, so admin screens never show the songs of a game
+in progress.
 
 ## Stack
 
@@ -66,7 +69,7 @@ songs of a game in progress.
 - **Audio responses** must support HTTP Range (`serveFile` in `src/lib/storage.ts`): iPhone Safari won't
   play audio without it.
 - **Game rules and numbers** (reveal time, cutoff, points, guessing penalty) are all in
-  `src/lib/rules.ts`. The server keeps the clock (`answers.started_at` is set when the clip actually
+  `src/lib/rules.ts`; game modes and their lengths in `src/lib/modes.ts`. The server keeps the clock (`answers.started_at` is set when the clip actually
   starts playing) and scores every answer; the phone is never told which choice is right.
 - **Switched-off songs** (`songs.active = false`) stay in the catalog but new games leave them out
   entirely: never drawn, never a wrong answer (`createGame` in `src/lib/games.ts`). Games already
@@ -80,12 +83,18 @@ songs of a game in progress.
   jsonb) and `song_id` has no foreign key, so catalog songs can be deleted (or edited) without
   touching past or running games. Read song details from `gs.song`, never by joining `songs`
   (join only to check the full-length file still exists).
+- **Rounds:** `games.current_position` is the first song of the open round; `openRound()` gives its
+  end. A player's next song is the lowest open one they haven't answered (`startSong` refuses any
+  other). A song completes when everyone has answered it (`completeSongIfDone`); the round moves on
+  when all its songs are complete (`advanceIfRoundDone`). Picks for a song are shown only to players
+  who have answered it (`loadGameView`), so nothing gives an answer away.
 - **Clips are temporary:** a clip file is deleted once everyone has answered its song
-  (`completeRoundIfDone`) or its game ends early (`cancelGame`); `scripts/cleanup-clips.mjs`
+  (`completeSongIfDone`) or its game ends early (`cancelGame`); `scripts/cleanup-clips.mjs`
   sweeps leftovers on every start.
 - **Admin screens never show the songs of a game in progress** (the admin plays too): see
   `src/lib/admin-games.ts`. Clips have random file names, are only served to players in that game
-  and never ahead of the current song; the full song unlocks only after a player answers.
+  and never ahead of that player's next song (`mayPlayClip`); the full song unlocks only after a
+  player answers.
 - Phone screens: max width `max-w-md`, respect safe areas, inputs at 16px+ so iOS doesn't zoom.
   Admin screens are laid out for a desktop browser.
 
@@ -102,7 +111,8 @@ npm run typecheck && npm run lint && npm test && npm run build
   print; `RESEND_API_KEY` is forced empty.
 - GitHub Actions (`.github/workflows/ci.yml`) runs all four on every pull request and push to `main`.
 - Pure logic lives in modules without server-only imports so it can be unit tested: `rules.ts`,
-  `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`.
+  `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`,
+  `modes.ts` (rounds per game mode).
 - **Artist limit:** a game has at most one song per artist for every five songs
   (`maxSongsPerArtist` in `src/lib/draw.ts`); it never blocks a game, it spreads artists as evenly
   as the catalog allows.

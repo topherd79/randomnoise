@@ -6,7 +6,7 @@ import { formatPoints, formatSeconds } from "@/lib/rules";
 import { Logo } from "@/components/Logo";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { PlayRound } from "./PlayRound";
-import { ResultsCard, SongCard, StandingsCard } from "./parts";
+import { PicksList, ResultsCard, SongCard, StandingsCard } from "./parts";
 import { Waiting } from "./Waiting";
 
 function serverTime() {
@@ -27,7 +27,7 @@ export default async function GamePage(props: PageProps<"/game/[id]">) {
           <Logo />
         </Link>
         <span className="text-sm text-muted">
-          {view.status === "active" ? `Song ${view.position} of ${view.songCount}` : view.status === "finished" ? "Final results" : "Game ended"}
+          {view.status === "active" ? view.label : view.status === "finished" ? "Final results" : "Game ended"}
         </span>
       </header>
       {view.status === "active" ? <ActiveGame view={view} userId={user.id} /> : <OverGame view={view} />}
@@ -36,67 +36,93 @@ export default async function GamePage(props: PageProps<"/game/[id]">) {
 }
 
 function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
-  const round = view.current;
-  if (!round) return <p className="py-10 text-muted">This game has no song to play right now.</p>;
+  const next = view.next;
 
-  // Not yet answered: the play screen (results of the last song first, if you haven't started this one).
-  if (!round.my.answeredAt) {
-    const showLast = view.last && !round.my.startedAt;
+  // In the middle of a song (tapped Play, not answered): just the play screen.
+  if (next?.my.startedAt) {
     return (
-      <div className="flex flex-1 flex-col gap-8 pt-6">
-        {showLast && view.last && (
-          <>
-            <ResultsCard results={view.last} />
-            <StandingsCard standings={view.standings} />
-            <h2 className="-mb-6 text-sm font-semibold uppercase tracking-[0.18em] text-muted">Up next</h2>
-          </>
-        )}
+      <div className="flex flex-1 flex-col pt-6">
         <PlayRound
-          key={round.gameSongId}
-          gameSongId={round.gameSongId}
-          position={round.position}
+          key={next.gameSongId}
+          gameSongId={next.gameSongId}
+          position={next.position}
           total={view.songCount}
-          clipUrl={round.clipUrl}
-          choices={round.choices}
-          startedAt={round.my.startedAt}
+          clipUrl={next.clipUrl}
+          choices={next.choices}
+          startedAt={next.my.startedAt}
           serverNow={serverTime()}
         />
       </div>
     );
   }
 
-  // Answered: how you did, the song, and who's left.
-  const right = round.my.correct;
-  const yourPick = round.choices.find((c) => c.songId === round.my.choiceSongId)?.label;
+  const latest = view.latest;
+  // The song I just answered gets the big "how you did"; a song from a round
+  // that's already over is just its results.
+  const justPlayed = latest && latest.position >= view.roundStart;
   return (
-    <div className="flex flex-col gap-6 pt-6">
-      {/* Updates by itself as others answer; the results appear the moment the last one does. */}
-      <LiveRefresh gameIds={[view.id]} />
-      <section>
-        <p className={`text-3xl font-bold ${right ? "text-accent" : "text-danger"}`}>
-          {right ? "You got it." : "Not this time."}
-        </p>
-        <p className="mt-2 text-lg text-muted">
-          {round.my.points !== null && (
-            <span className="font-semibold text-ink">
-              {round.my.points > 0 ? `+${formatPoints(round.my.points)}` : formatPoints(round.my.points)} points
-            </span>
-          )}
-          {round.my.elapsedMs !== null && ` · answered in ${formatSeconds(round.my.elapsedMs)}`}
-        </p>
-        {!right && yourPick && <p className="mt-1 text-sm text-muted">You picked {yourPick}.</p>}
-      </section>
-      {round.song && <SongCard song={round.song} />}
-      <Waiting gameSongId={round.gameSongId} me={userId} waitingOn={round.waitingOn} />
-      {view.last && (
+    <div className="flex flex-1 flex-col gap-8 pt-6">
+      {/* Waiting on others: updates by itself as they answer and when the next songs open. */}
+      {!next && <LiveRefresh gameIds={[view.id]} />}
+
+      {latest && justPlayed ? (
+        <section className="flex flex-col gap-4">
+          <div>
+            <p className={`text-3xl font-bold ${latest.my.correct ? "text-accent" : "text-danger"}`}>
+              {latest.my.correct ? "You got it." : "Not this time."}
+            </p>
+            <p className="mt-2 text-lg text-muted">
+              <span className="font-semibold text-ink">
+                {latest.my.points > 0 ? `+${formatPoints(latest.my.points)}` : formatPoints(latest.my.points)} points
+              </span>
+              {` · song ${latest.position} · ${formatSeconds(latest.my.elapsedMs)}`}
+            </p>
+            {!latest.my.correct && latest.my.pickLabel && <p className="mt-1 text-sm text-muted">You picked {latest.my.pickLabel}.</p>}
+          </div>
+          <SongCard song={latest.song} />
+          {latest.picks.length > 1 && <PicksList picks={latest.picks} />}
+        </section>
+      ) : (
+        latest && <ResultsCard results={latest} />
+      )}
+
+      {next ? (
+        <div className="flex flex-1 flex-col">
+          {latest && <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">Up next</h2>}
+          <PlayRound
+            key={next.gameSongId}
+            gameSongId={next.gameSongId}
+            position={next.position}
+            total={view.songCount}
+            clipUrl={next.clipUrl}
+            choices={next.choices}
+            startedAt={null}
+            serverNow={serverTime()}
+            showRules={!latest}
+          />
+        </div>
+      ) : (
+        <Waiting gameId={view.id} me={userId} waitingOn={view.waitingOn} roundLength={view.roundLength} note={view.waitingNote} />
+      )}
+
+      {view.completedCount > 0 && (
+        <StandingsCard
+          standings={view.standings}
+          title={`Standings after ${view.completedCount} ${view.completedCount === 1 ? "song" : "songs"}`}
+          played={view.roundLength > 1 ? { songCount: view.songCount } : undefined}
+        />
+      )}
+
+      {view.earlier.length > 0 && (
         <details className="group">
           <summary className="cursor-pointer list-none text-sm font-semibold text-muted">
-            <span className="group-open:hidden">Show song {view.last.position} results and standings</span>
-            <span className="hidden group-open:inline">Hide earlier results</span>
+            <span className="group-open:hidden">Show earlier songs ({view.earlier.length})</span>
+            <span className="hidden group-open:inline">Hide earlier songs</span>
           </summary>
           <div className="mt-4 flex flex-col gap-8">
-            <ResultsCard results={view.last} />
-            <StandingsCard standings={view.standings} />
+            {view.earlier.map((r) => (
+              <ResultsCard key={r.position} results={r} title={`Song ${r.position}`} />
+            ))}
           </div>
         </details>
       )}

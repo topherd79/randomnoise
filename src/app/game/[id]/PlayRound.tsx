@@ -16,13 +16,16 @@ type Props = {
   startedAt: number | null;
   /** Server time when the page was rendered, to line our clock up with the server's. */
   serverNow: number;
+  /** How scoring works, shown before a player's first song of the game (not before every one). */
+  showRules?: boolean;
 };
 
 type Phase = "ready" | "starting" | "playing" | "sending" | "done";
 
-export function PlayRound({ gameSongId, position, total, clipUrl, choices, startedAt, serverNow }: Props) {
+export function PlayRound({ gameSongId, position, total, clipUrl, choices, startedAt, serverNow, showRules = true }: Props) {
   const router = useRouter();
   const audio = useRef<HTMLAudioElement>(null);
+  const section = useRef<HTMLElement>(null);
   // serverTime ≈ Date.now() + offset
   const [offset] = useState(() => serverNow - Date.now());
   // Local Date.now() when the clock started (from the server's start time if we're resuming).
@@ -76,6 +79,8 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
     clockStarted.current = true;
     setClockStart(Date.now());
     setPhase("playing");
+    // Earlier results may sit above this song: bring the choices into view.
+    section.current?.scrollIntoView({ block: "start", behavior: "smooth" });
     startSongAction(gameSongId).then((r) => {
       if (r.ok) setClockStart(r.startedAt - offset);
       else setError(r.error);
@@ -106,7 +111,7 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
   const revealPct = Math.min(1, shownElapsed / REVEAL_MS);
 
   return (
-    <section className="flex flex-1 flex-col">
+    <section ref={section} className="flex flex-1 flex-col scroll-mt-4">
       <audio
         ref={audio}
         src={clipUrl}
@@ -122,22 +127,26 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
             Song {position} of {total}
           </p>
           <h1 className="mt-3 text-4xl font-bold leading-tight">Ready?</h1>
-          <p className="mt-4 text-lg leading-relaxed text-muted">
-            The clip and the clock start together. Four answers appear letter by letter; the sooner you pick
-            the right one, the more points it&apos;s worth.
-          </p>
-          <ul className="mt-4 space-y-1 text-sm leading-relaxed text-muted">
-            <li>
-              Right: {formatPoints(1000)} at the start, sliding to 100 once all the answers are showing (
-              {REVEAL_MS / 1000} s).
-            </li>
-            {GUESS_PENALTY && <li>Wrong: you lose a third of what a right answer would have earned.</li>}
-            <li>Turn your volume up. You can replay the clip, but the clock keeps running.</li>
-          </ul>
+          {showRules && (
+            <>
+              <p className="mt-4 text-lg leading-relaxed text-muted">
+                The clip and the clock start together. Four answers appear letter by letter; the sooner you pick
+                the right one, the more points it&apos;s worth.
+              </p>
+              <ul className="mt-4 space-y-1 text-sm leading-relaxed text-muted">
+                <li>
+                  Right: {formatPoints(1000)} at the start, sliding to 100 once all the answers are showing (
+                  {REVEAL_MS / 1000} s).
+                </li>
+                {GUESS_PENALTY && <li>Wrong: you lose a third of what a right answer would have earned.</li>}
+                <li>Turn your volume up. You can replay the clip, but the clock keeps running.</li>
+              </ul>
+            </>
+          )}
           <button
             onClick={onPlay}
             disabled={phase === "starting"}
-            className="mt-10 flex h-20 w-full items-center justify-center gap-3 rounded-full bg-accent text-2xl font-bold text-accent-ink transition active:scale-[0.98] disabled:opacity-70"
+            className={`${showRules ? "mt-10" : "mt-6"} flex h-20 w-full items-center justify-center gap-3 rounded-full bg-accent text-2xl font-bold text-accent-ink transition active:scale-[0.98] disabled:opacity-70`}
           >
             {phase === "starting" ? "Loading…" : "▶  Play"}
           </button>

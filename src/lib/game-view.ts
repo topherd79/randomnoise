@@ -1,10 +1,11 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
-import { answers, gamePlayers, gameSongs, games, songs, users, type Choice, type SongSnapshot } from "@/db/schema";
+import { answers, gamePlayers, gameSongs, games, songs, users, type Choice, type GameMode, type SongSnapshot } from "@/db/schema";
 import { appleMusicLink, spotifyLink } from "./links";
 import { choiceLabel, shuffleFor } from "./rules";
-import { standings, type Standing } from "./games";
+import { roundState, standings, type Standing } from "./games";
+import { inRound, nextPosition, openRound, roundLabel, songsLeft, waitingNote } from "./modes";
 
 export type SongInfo = {
   title: string;
@@ -34,35 +35,55 @@ export type Pick = {
   correct: boolean | null;
   points: number | null;
   elapsedMs: number | null;
+  /** Hasn't answered this song yet (the game is still on): shown as "not played yet". */
+  pending?: boolean;
 };
 
+/** A song the player can play now: their next one in the open round. */
 export type RoundView = {
   gameSongId: string;
   position: number;
   clipUrl: string;
   choices: { songId: string; label: string }[];
   my: MyAnswer;
-  /** Players who still have to answer (never what anyone picked). */
-  waitingOn: { userId: string; name: string }[];
-  /** Only once I've answered. */
-  song: SongInfo | null;
-  rightSongId: string | null;
 };
 
 export type ResultsView = { position: number; song: SongInfo; picks: Pick[] };
 
+/** A song the player has answered: how they did, plus everyone's picks so far. */
+export type AnsweredView = ResultsView & {
+  my: { correct: boolean; points: number; elapsedMs: number; pickLabel: string | null };
+};
+
+export type Waiter = { userId: string; name: string; left: number };
+
 export type GameView = {
   id: string;
   status: "active" | "finished" | "cancelled";
+  mode: GameMode;
   songCount: number;
-  position: number;
+  /** "Song 4 of 10", "Songs 4–6 of 9" or "All 10 songs" (active games). */
+  label: string;
+  /** First song of the open round, and how many songs are open at once (1, 3 or all of them). */
+  roundStart: number;
+  roundLength: number;
   players: { userId: string; name: string }[];
-  current: RoundView | null;
-  /** Results of the song before the current one (or the last song, once the game is over). */
-  last: ResultsView | null;
+  /** My next song to play, or null once I've played every open song. */
+  next: RoundView | null;
+  /** The song I answered most recently, with everyone's picks so far. */
+  latest: AnsweredView | null;
+  /** The other songs I've answered, newest first. */
+  earlier: ResultsView[];
+  /** Players (me included) with songs left in the open round. */
+  waitingOn: Waiter[];
+  /** What happens once they're done, in plain words. */
+  waitingNote: string;
   /** Every completed song, newest first (for the finished-game page). */
   history: ResultsView[];
+  /** Points from completed songs only, plus how many songs each player has played. */
   standings: Standing[];
+  /** How many songs every player has answered (what the standings count). */
+  completedCount: number;
 };
 
 /** What players see about a song, from the game's snapshot (not the live catalog). */
@@ -79,7 +100,12 @@ function songInfo(s: SongSnapshot, gameSongId: string, stillInCatalog: boolean):
   };
 }
 
-/** Everything the game page shows one player. Null if they aren't in the game. */
+/**
+ * Everything the game page shows one player. Null if they aren't in the game.
+ *
+ * What anyone picked for a song is only shown to players who have answered it
+ * themselves (or once everyone has), so nothing gives an answer away.
+ */
 export async function loadGameView(gameId: string, userId: string): Promise<GameView | null> {
   const [game] = await db
     .select({ game: games })
@@ -107,74 +133,114 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
       .orderBy(asc(gameSongs.position)),
     standings(gameId),
   ]);
-
-  const visible = rounds.filter((r) => r.gs.completedAt || r.gs.position === g.currentPosition);
-  const allAnswers = visible.length
+  const allAnswers = rounds.length
     ? await db
         .select()
         .from(answers)
-        .where(inArray(answers.gameSongId, visible.map((r) => r.gs.id)))
+        .where(inArray(answers.gameSongId, rounds.map((r) => r.gs.id)))
     : [];
-  const nameOf = new Map(players.map((p) => [p.userId, p.name]));
+  const answerOf = (gameSongId: string, uid: string) => allAnswers.find((a) => a.gameSongId === gameSongId && a.userId === uid);
+  const answeredBy = (gameSongId: string, uid: string) => Boolean(answerOf(gameSongId, uid)?.answeredAt);
+  const active = g.status === "active";
 
+  // Callers only pass songs this player may see the picks for.
   const resultsFor = (r: (typeof rounds)[number]): ResultsView => {
     const labelOf = new Map(r.gs.choices.map((c: Choice) => [c.songId, choiceLabel(c)]));
     const picks: Pick[] = players.map((p) => {
-      const a = allAnswers.find((x) => x.gameSongId === r.gs.id && x.userId === p.userId);
+      const a = answerOf(r.gs.id, p.userId);
+      if (!a?.answeredAt) {
+        const pending = active && !r.gs.completedAt;
+        return { userId: p.userId, name: p.name, label: null, correct: null, points: null, elapsedMs: null, pending };
+      }
       return {
         userId: p.userId,
         name: p.name,
-        label: a?.choiceSongId ? (labelOf.get(a.choiceSongId) ?? null) : null,
-        correct: a?.correct ?? null,
-        points: a?.points ?? null,
-        elapsedMs: a?.elapsedMs ?? null,
+        label: a.choiceSongId ? (labelOf.get(a.choiceSongId) ?? null) : null,
+        correct: a.correct,
+        points: a.points,
+        elapsedMs: a.elapsedMs,
       };
     });
-    picks.sort((x, y) => (y.points ?? -Infinity) - (x.points ?? -Infinity) || x.name.localeCompare(y.name));
+    picks.sort(
+      (x, y) =>
+        Number(Boolean(x.pending)) - Number(Boolean(y.pending)) ||
+        (y.points ?? -Infinity) - (x.points ?? -Infinity) ||
+        x.name.localeCompare(y.name),
+    );
     return { position: r.gs.position, song: songInfo(r.gs.song, r.gs.id, Boolean(r.inCatalog)), picks };
   };
 
-  let current: RoundView | null = null;
-  const cur = g.status === "active" ? rounds.find((r) => r.gs.position === g.currentPosition) : undefined;
-  if (cur) {
-    const mine = allAnswers.find((a) => a.gameSongId === cur.gs.id && a.userId === userId);
-    const answered = Boolean(mine?.answeredAt);
-    current = {
-      gameSongId: cur.gs.id,
-      position: cur.gs.position,
-      clipUrl: `/api/clips/${cur.gs.clipFile}`,
-      choices: shuffleFor(
-        cur.gs.choices.map((c) => ({ songId: c.songId, label: choiceLabel(c) })),
-        `${cur.gs.id}:${userId}`,
-      ),
-      my: {
-        startedAt: mine?.startedAt.getTime() ?? null,
-        answeredAt: mine?.answeredAt?.getTime() ?? null,
-        choiceSongId: mine?.choiceSongId ?? null,
-        correct: mine?.correct ?? null,
-        points: mine?.points ?? null,
-        elapsedMs: mine?.elapsedMs ?? null,
-      },
-      waitingOn: players
-        .filter((p) => !allAnswers.some((a) => a.gameSongId === cur.gs.id && a.userId === p.userId && a.answeredAt))
-        .map((p) => ({ userId: p.userId, name: nameOf.get(p.userId) ?? p.name })),
-      song: answered ? songInfo(cur.gs.song, cur.gs.id, Boolean(cur.inCatalog)) : null,
-      rightSongId: answered ? cur.gs.songId : null,
-    };
+  const round = openRound(g.mode, g.songCount, g.currentPosition);
+  const answeredInRound = (uid: string) =>
+    new Set(rounds.filter((r) => inRound(round, r.gs.position) && answeredBy(r.gs.id, uid)).map((r) => r.gs.position));
+
+  let next: RoundView | null = null;
+  let latest: AnsweredView | null = null;
+  let earlier: ResultsView[] = [];
+  let waitingOn: Waiter[] = [];
+  if (active) {
+    const nextPos = nextPosition(round, answeredInRound(userId));
+    const nextRow = nextPos === null ? undefined : rounds.find((r) => r.gs.position === nextPos);
+    if (nextRow) {
+      const mine = answerOf(nextRow.gs.id, userId);
+      next = {
+        gameSongId: nextRow.gs.id,
+        position: nextRow.gs.position,
+        clipUrl: `/api/clips/${nextRow.gs.clipFile}`,
+        choices: shuffleFor(
+          nextRow.gs.choices.map((c) => ({ songId: c.songId, label: choiceLabel(c) })),
+          `${nextRow.gs.id}:${userId}`,
+        ),
+        my: {
+          startedAt: mine?.startedAt.getTime() ?? null,
+          answeredAt: null,
+          choiceSongId: null,
+          correct: null,
+          points: null,
+          elapsedMs: null,
+        },
+      };
+    }
+    // Songs I've answered, newest first: the latest gets the full "how you did" treatment.
+    const mineDone = rounds.filter((r) => answeredBy(r.gs.id, userId)).reverse();
+    if (mineDone[0]) {
+      const r = mineDone[0];
+      const a = answerOf(r.gs.id, userId)!;
+      const labelOf = new Map(r.gs.choices.map((c: Choice) => [c.songId, choiceLabel(c)]));
+      latest = {
+        ...resultsFor(r),
+        my: {
+          correct: Boolean(a.correct),
+          points: a.points ?? 0,
+          elapsedMs: a.elapsedMs ?? 0,
+          pickLabel: a.choiceSongId ? (labelOf.get(a.choiceSongId) ?? null) : null,
+        },
+      };
+    }
+    earlier = mineDone.slice(1).map(resultsFor);
+    waitingOn = players
+      .map((p) => ({ userId: p.userId, name: p.name, left: songsLeft(round, answeredInRound(p.userId)) }))
+      .filter((w) => w.left > 0);
   }
 
   const completed = rounds.filter((r) => r.gs.completedAt);
-  const history = completed.map(resultsFor).reverse();
   return {
     id: g.id,
     status: g.status,
+    mode: g.mode,
     songCount: g.songCount,
-    position: g.currentPosition,
+    label: roundLabel(g.mode, g.songCount, round),
+    roundStart: round.start,
+    roundLength: round.end - round.start + 1,
     players,
-    current,
-    last: history[0] ?? null,
-    history,
+    next,
+    latest,
+    earlier,
+    waitingOn,
+    waitingNote: waitingNote(g.mode, round, g.songCount),
+    history: completed.map(resultsFor).reverse(),
     standings: table,
+    completedCount: completed.length,
   };
 }
 
@@ -191,29 +257,28 @@ export async function myGames(userId: string) {
 
   const states = await Promise.all(
     active.map(async (g) => {
-      const [gs] = await db
-        .select({ id: gameSongs.id })
-        .from(gameSongs)
-        .where(and(eq(gameSongs.gameId, g.id), eq(gameSongs.position, g.currentPosition)))
-        .limit(1);
-      const roundAnswers = gs
-        ? await db.select({ userId: answers.userId, answeredAt: answers.answeredAt }).from(answers).where(eq(answers.gameSongId, gs.id))
-        : [];
-      const players = await db
-        .select({ userId: users.id, name: users.name })
-        .from(gamePlayers)
-        .innerJoin(users, eq(users.id, gamePlayers.userId))
-        .where(eq(gamePlayers.gameId, g.id));
-      const myTurn = !roundAnswers.some((a) => a.userId === userId && a.answeredAt);
-      // Other players who still have to answer (by id: two players could share a name).
+      const [{ round, answered }, players] = await Promise.all([
+        roundState(g),
+        db
+          .select({ userId: users.id, name: users.name })
+          .from(gamePlayers)
+          .innerJoin(users, eq(users.id, gamePlayers.userId))
+          .where(eq(gamePlayers.gameId, g.id))
+          .orderBy(asc(users.name)),
+      ]);
+      const next = nextPosition(round, answered(userId));
+      // Other players with songs left (by id: two players could share a name).
       const waitingOn = players
-        .filter((p) => p.userId !== userId && !roundAnswers.some((a) => a.userId === p.userId && a.answeredAt))
-        .map((p) => p.name);
+        .filter((p) => p.userId !== userId)
+        .map((p) => ({ name: p.name, left: songsLeft(round, answered(p.userId)) }))
+        .filter((w) => w.left > 0);
       return {
         id: g.id,
         songCount: g.songCount,
-        position: g.currentPosition,
-        myTurn,
+        label: roundLabel(g.mode, g.songCount, round),
+        roundLength: round.end - round.start + 1,
+        nextPosition: next,
+        myTurn: next !== null,
         waitingOn,
         others: players.filter((p) => p.userId !== userId).map((p) => p.name),
       };
@@ -275,7 +340,7 @@ export async function loadGameResults(gameIds: string[]): Promise<Map<string, Ga
   for (const g of gameRows) {
     const players = playerRows.filter((p) => p.gameId === g.id).sort((a, b) => a.name.localeCompare(b.name));
     const gameRounds = rounds.filter((r) => r.gs.gameId === g.id);
-    const totals = new Map(players.map((p) => [p.userId, { points: 0, correct: 0 }]));
+    const totals = new Map(players.map((p) => [p.userId, { points: 0, correct: 0, played: 0 }]));
 
     const songResults: SongResult[] = gameRounds.map((r) => {
       const labelOf = new Map(r.gs.choices.map((c: Choice) => [c.songId, choiceLabel(c)]));
@@ -284,6 +349,7 @@ export async function loadGameResults(gameIds: string[]): Promise<Map<string, Ga
         const t = totals.get(p.userId)!;
         t.points += a?.points ?? 0;
         if (a?.correct) t.correct += 1;
+        if (a?.answeredAt) t.played += 1;
         return {
           userId: p.userId,
           name: p.name,

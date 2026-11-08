@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { GameMode } from "../lib/modes";
 
 /** Everyone who can log in. The admin is a regular player too (matched by ADMIN_EMAIL). */
 export const users = pgTable("users", {
@@ -131,6 +132,8 @@ export type Song = typeof songs.$inferSelect;
 // ---------------------------------------------------------------------------
 
 export type GameStatus = "active" | "finished" | "cancelled";
+/** How many songs are open at a time: see src/lib/modes.ts. */
+export type { GameMode };
 
 /** How the three wrong answers for each song are picked. */
 export type WrongAnswerMode = "random" | "similar";
@@ -160,7 +163,12 @@ export const games = pgTable("games", {
   songCount: integer("song_count").notNull(),
   clipLengthSec: integer("clip_length_sec").notNull(),
   wrongAnswers: text("wrong_answers").$type<WrongAnswerMode>().notNull().default("random"),
-  /** The song everyone is on now, 1-based. Moves on when every player has answered it. */
+  /** "og" (one song at a time), "three" (three at a time) or "all" (every song open from the start). */
+  mode: text("mode").$type<GameMode>().notNull().default("og"),
+  /**
+   * The first song of the open round, 1-based (with The OG, the song everyone is on).
+   * Moves on to the next round once every player has answered every song in this one.
+   */
   currentPosition: integer("current_position").notNull().default(1),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

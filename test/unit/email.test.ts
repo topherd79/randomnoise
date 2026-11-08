@@ -10,8 +10,8 @@ const results: GameResults = {
   createdAt: new Date(),
   finishedAt: new Date(),
   standings: [
-    { userId: "u1", name: "Mike", points: 1500, correct: 2 },
-    { userId: "u2", name: "Sarah <3", points: 700, correct: 1 },
+    { userId: "u1", name: "Mike", points: 1500, correct: 2, played: 2 },
+    { userId: "u2", name: "Sarah <3", points: 700, correct: 1, played: 2 },
   ],
   songs: [
     {
