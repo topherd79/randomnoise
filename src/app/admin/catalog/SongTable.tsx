@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatTime } from "@/lib/clips";
 import type { LookupStatus } from "@/db/schema";
+import { decadeOf, filterKey } from "@/lib/song-filters";
 import { ActiveSwitch } from "./ActiveSwitch";
 
 export type SongRow = {
@@ -140,14 +141,49 @@ const segment = (selected: boolean) =>
     selected ? "bg-ink text-bg" : "text-muted hover:text-ink"
   }`;
 
+// Decade and genre tags. "none" / "" stand for songs with no year / no genre.
+type DecadeTag = number | "none";
+const decadeTagOf = (r: SongRow): DecadeTag => (r.year === null ? "none" : decadeOf(r.year));
+const genreTagOf = (r: SongRow): string => (r.genre ? filterKey(r.genre) : "");
+
+function toggled<K>(set: Set<K>, key: K): Set<K> {
+  const next = new Set(set);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
+/** A tag to tap: ticked tags narrow the list; the count is how many songs it would show. */
+function Tag({ on, count, onClick, children }: { on: boolean; count: number; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+        on
+          ? "border-accent bg-accent/10 text-ink"
+          : count === 0
+            ? "border-line text-muted/50 hover:border-muted"
+            : "border-line text-ink hover:border-muted"
+      }`}
+    >
+      {children} <span className="font-normal text-muted">{count}</span>
+    </button>
+  );
+}
+
 export function SongTable({ rows }: { rows: SongRow[] }) {
   const [query, setQuery] = useState("");
   const [view, setView] = useState<View>("artist");
   const [show, setShow] = useState<Show>("all");
+  const [decades, setDecades] = useState<Set<DecadeTag>>(new Set());
+  const [genres, setGenres] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<Set<string>>(new Set());
 
   const q = query.trim().toLowerCase();
-  const shown = useMemo(
+  // Search and "Show" first; then the tags: any ticked decade, and any ticked genre.
+  const base = useMemo(
     () =>
       rows.filter(
         (r) =>
@@ -160,10 +196,45 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
       ),
     [rows, q, show],
   );
-  const groups = useMemo(() => groupByArtist(shown), [shown]);
+  const decadeOk = (r: SongRow) => decades.size === 0 || decades.has(decadeTagOf(r));
+  const genreOk = (r: SongRow) => genres.size === 0 || genres.has(genreTagOf(r));
+  const shown = base.filter((r) => decadeOk(r) && genreOk(r));
+  const groups = groupByArtist(shown);
+
+  // Every decade and genre in the catalog gets a tag (so tags don't jump around);
+  // each count follows the other filters: tick "Alternative" and the decades
+  // count Alternative songs.
+  const decadeTags = (() => {
+    const all = [...new Set(rows.map(decadeTagOf))].sort((a, b) => (a === "none" ? 1 : b === "none" ? -1 : a - b));
+    const counts = new Map<DecadeTag, number>();
+    for (const r of base) if (genreOk(r)) counts.set(decadeTagOf(r), (counts.get(decadeTagOf(r)) ?? 0) + 1);
+    return all.map((key) => ({ key, label: key === "none" ? "No year" : `${key}s`, count: counts.get(key) ?? 0 }));
+  })();
+  const genreTags = (() => {
+    const names = new Map<string, Map<string, number>>();
+    for (const r of rows) {
+      const key = genreTagOf(r);
+      const spellings = names.get(key) ?? new Map<string, number>();
+      const label = r.genre?.trim() || "No genre";
+      spellings.set(label, (spellings.get(label) ?? 0) + 1);
+      names.set(key, spellings);
+    }
+    const counts = new Map<string, number>();
+    for (const r of base) if (decadeOk(r)) counts.set(genreTagOf(r), (counts.get(genreTagOf(r)) ?? 0) + 1);
+    return [...names.entries()]
+      .map(([key, spellings]) => ({
+        key,
+        // The most common spelling names the tag.
+        label: [...spellings.entries()].sort((a, b) => b[1] - a[1])[0][0],
+        total: [...spellings.values()].reduce((a, b) => a + b, 0),
+        count: counts.get(key) ?? 0,
+      }))
+      .sort((a, b) => (a.key === "" ? 1 : b.key === "" ? -1 : b.total - a.total || a.label.localeCompare(b.label)));
+  })();
+  const tagging = decades.size > 0 || genres.size > 0;
 
   // While searching or filtering, every matching artist is shown open.
-  const filtering = Boolean(q) || show !== "all";
+  const filtering = Boolean(q) || show !== "all" || tagging;
   const isOpen = (key: string) => filtering || open.has(key);
   function toggle(key: string) {
     setOpen((prev) => {
@@ -210,6 +281,40 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
             {copiesTotal > 0 && <option value="copies">Same song more than once ({copiesTotal})</option>}
           </select>
         </label>
+      </div>
+
+      <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-line px-4 py-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="w-16 shrink-0 text-xs font-semibold uppercase tracking-wider text-muted">Decades</span>
+          {decadeTags.map((t) => (
+            <Tag key={String(t.key)} on={decades.has(t.key)} count={t.count} onClick={() => setDecades((d) => toggled(d, t.key))}>
+              {t.label}
+            </Tag>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="w-16 shrink-0 text-xs font-semibold uppercase tracking-wider text-muted">Genres</span>
+          {genreTags.map((t) => (
+            <Tag key={t.key} on={genres.has(t.key)} count={t.count} onClick={() => setGenres((g) => toggled(g, t.key))}>
+              {t.label}
+            </Tag>
+          ))}
+        </div>
+        {tagging && (
+          <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted">
+            <span>Any ticked decade, and any ticked genre.</span>
+            <button
+              type="button"
+              onClick={() => {
+                setDecades(new Set());
+                setGenres(new Set());
+              }}
+              className="font-semibold text-ink underline-offset-2 hover:underline"
+            >
+              Clear tags
+            </button>
+          </p>
+        )}
       </div>
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
