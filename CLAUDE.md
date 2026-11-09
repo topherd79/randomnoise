@@ -64,7 +64,9 @@ in progress.
   unset it (`env -u RESEND_API_KEY …`) when running the app for tests so no real email goes out.
 - **Song details lookup:** Apple's free song search (`src/lib/lookup.ts`), about 20 searches a
   minute, so the catalog page runs lookups one at a time; a miss is retried with the title alone
-  after a pause, and "Try again" on the catalog page re-queues songs that weren't found. song.link's free API is gone; Spotify links
+  after a pause, and "Try again" on the catalog page re-queues songs that weren't found. Apple's
+  free search misses some songs entirely; then a Spotify match (when the keys are set) supplies
+  the artwork, album and year, and the song counts as found. song.link's free API is gone; Spotify links
   are exact only if `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` are set, otherwise a search link.
   Songs looked up before the keys were set get exact links from the catalog page's "Find exact
   Spotify links" (`fillSpotifyLinkFor` in `src/lib/catalog.ts`, which also fills past games' snapshots).

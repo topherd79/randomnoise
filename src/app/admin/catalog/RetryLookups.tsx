@@ -11,8 +11,8 @@ export function RetryLookups({ count }: { count: number }) {
   return (
     <section className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-surface px-4 py-3 text-sm">
       <span className="text-muted">
-        {count} {count === 1 ? "song" : "songs"} didn&apos;t get artwork and links from the details lookup. The lookup
-        now also tries the title on its own, so another try often finds them.
+        {count} {count === 1 ? "song" : "songs"} didn&apos;t get artwork and links from the details lookup. Apple&apos;s
+        free search misses some songs; another try takes the artwork from Spotify when it has the song.
       </span>
       <button
         type="button"
