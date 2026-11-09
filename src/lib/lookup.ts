@@ -8,7 +8,9 @@ export { normalize };
 // - Apple's free song search (iTunes Search API): artwork, Apple Music link, year, genre.
 // - Spotify's API, only if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are set: the exact
 //   Spotify link. (song.link's free API, the original plan, now requires a key.) Without it,
-//   pages link to a Spotify search instead.
+//   pages link to a Spotify search instead. When Apple's search doesn't have a song at all
+//   (it misses some, like Tame Impala's "The Less I Know The Better"), the artwork, album
+//   and year come from Spotify's match instead.
 // Apple allows roughly 20 searches a minute, so the catalog page runs lookups one at a
 // time (see LookupRunner) rather than all at once after a bulk upload.
 
@@ -113,10 +115,12 @@ export function spotifyConfigured(): boolean {
  * has no match (or isn't configured). Throws if Spotify's API fails.
  */
 export async function findSpotifyLink(title: string, artist: string): Promise<string | undefined> {
-  return spotifySearch(title, artist);
+  return (await spotifySearch(title, artist))?.url;
 }
 
-async function spotifySearch(title: string, artist: string): Promise<string | undefined> {
+type SpotifyMatch = { url: string; artworkUrl?: string; album?: string; year?: number };
+
+async function spotifySearch(title: string, artist: string): Promise<SpotifyMatch | undefined> {
   const id = process.env.SPOTIFY_CLIENT_ID?.trim();
   const secret = process.env.SPOTIFY_CLIENT_SECRET?.trim();
   if (!id || !secret) return undefined;
@@ -144,21 +148,39 @@ async function spotifySearch(title: string, artist: string): Promise<string | un
   });
   if (!res.ok) throw new Error(`Spotify search returned ${res.status}`);
   const json = (await res.json()) as {
-    tracks?: { items?: { name: string; artists: { name: string }[]; external_urls: { spotify?: string } }[] };
+    tracks?: {
+      items?: {
+        name: string;
+        artists: { name: string }[];
+        external_urls: { spotify?: string };
+        album?: { name?: string; release_date?: string; images?: { url: string; width?: number }[] };
+      }[];
+    };
   };
   const t = normalize(title);
   const a = normalize(artist);
   const hit = json.tracks?.items?.find(
     (i) => normalize(i.name) === t && i.artists.some((ar) => normalize(ar.name) === a),
   );
-  return hit?.external_urls.spotify;
+  if (!hit?.external_urls.spotify) return undefined;
+  const year = Number((hit.album?.release_date ?? "").slice(0, 4));
+  // Spotify lists the biggest image first (640×640).
+  const image = [...(hit.album?.images ?? [])].sort((x, y) => (y.width ?? 0) - (x.width ?? 0))[0];
+  return {
+    url: hit.external_urls.spotify,
+    artworkUrl: image?.url,
+    album: hit.album?.name || undefined,
+    year: year > 1900 ? year : undefined,
+  };
 }
 
 /**
  * Look up one song. Throws only when Apple's search itself fails (network, rate limit).
  * If searching for artist and title finds nothing, it tries once more with the
  * title alone (still matching the artist), after a pause that keeps us under
- * Apple's limit of about 20 searches a minute.
+ * Apple's limit of about 20 searches a minute. If Apple still doesn't have it
+ * but Spotify does, the song counts as found, with Spotify's artwork, album and
+ * year (and no Apple Music link: that button opens a search).
  */
 export async function lookupSong(title: string, artist: string, opts: { retryAfterMs?: number } = {}): Promise<LookupResult> {
   let result = await itunesSearch(title, artist);
@@ -167,8 +189,13 @@ export async function lookupSong(title: string, artist: string, opts: { retryAft
     result = await itunesSearch(title, artist, "title");
   }
   try {
-    const spotifyUrl = await spotifySearch(title, artist);
-    if (spotifyUrl) result.spotifyUrl = spotifyUrl;
+    const spotify = await spotifySearch(title, artist);
+    if (spotify) {
+      result.spotifyUrl = spotify.url;
+      if (!result.found) {
+        result = { found: true, spotifyUrl: spotify.url, artworkUrl: spotify.artworkUrl, album: spotify.album, year: spotify.year };
+      }
+    }
   } catch (err) {
     console.error("Spotify lookup failed", err);
   }

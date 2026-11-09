@@ -82,6 +82,44 @@ describe("lookupSong", () => {
     expect(r).toMatchObject({ found: true, year: 1995, album: "Jagged Little Pill" });
   });
 
+  it("takes artwork, album and year from Spotify when Apple doesn't have the song", async () => {
+    vi.stubEnv("SPOTIFY_CLIENT_ID", "id");
+    vi.stubEnv("SPOTIFY_CLIENT_SECRET", "secret");
+    vi.stubGlobal("fetch", async (url: string | URL) => {
+      const u = String(url);
+      if (u.startsWith("https://itunes.apple.com/")) return Response.json({ results: [] });
+      if (u.startsWith("https://accounts.spotify.com/")) return Response.json({ access_token: "t", expires_in: 3600 });
+      return Response.json({
+        tracks: {
+          items: [
+            {
+              name: "The Less I Know The Better",
+              artists: [{ name: "Tame Impala" }],
+              external_urls: { spotify: "https://open.spotify.com/track/abc" },
+              album: {
+                name: "Currents",
+                release_date: "2015-07-17",
+                images: [
+                  { url: "https://i.scdn.co/image/small", width: 64 },
+                  { url: "https://i.scdn.co/image/big", width: 640 },
+                ],
+              },
+            },
+          ],
+        },
+      });
+    });
+    const r = await lookupSong("The Less I Know The Better", "Tame Impala", { retryAfterMs: 0 });
+    expect(r).toEqual({
+      found: true,
+      spotifyUrl: "https://open.spotify.com/track/abc",
+      artworkUrl: "https://i.scdn.co/image/big",
+      album: "Currents",
+      year: 2015,
+    });
+    vi.unstubAllEnvs();
+  });
+
   it("doesn't take a same-titled song by someone else", async () => {
     vi.stubGlobal("fetch", async () =>
       Response.json({ results: [{ trackName: "Perfect", artistName: "Ed Sheeran", releaseDate: "2017-03-03T00:00:00Z" }] }),

@@ -27,6 +27,9 @@ export default defineConfig({
       ADMIN_EMAIL: "admin@example.com",
       // Never send real email from tests (the cloud environment may have a real key).
       RESEND_API_KEY: "",
+      // Tests fake Spotify themselves; never call the real one with keys from the environment.
+      SPOTIFY_CLIENT_ID: "",
+      SPOTIFY_CLIENT_SECRET: "",
     },
   },
 });
