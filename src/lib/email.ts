@@ -170,6 +170,14 @@ function ordinal(n: number): string {
 const signed = (p: number) => (p > 0 ? `+${formatPoints(p)}` : formatPoints(p));
 const C = { ink: "#0d0d12", body: "#3a3a44", muted: "#8a8a96", line: "#ececf0", right: "#2e8a35", wrong: "#cc3344" };
 
+/** One song's picks, best score first (no answer last; ties by name). */
+const byScore = <T extends { name: string; points: number | null; label: string | null }>(picks: T[]): T[] =>
+  [...picks].sort(
+    (a, b) =>
+      (b.label === null ? -Infinity : (b.points ?? 0)) - (a.label === null ? -Infinity : (a.points ?? 0)) ||
+      a.name.localeCompare(b.name),
+  );
+
 /** Final standings plus every song with everyone's pick, as email-safe HTML and plain text. */
 function resultsSection(results: GameResults) {
   const th = `style="padding:6px 0;font-size:12px;font-weight:600;color:${C.muted};text-align:left;"`;
@@ -189,7 +197,7 @@ function resultsSection(results: GameResults) {
         ? `<img src="${escapeHtml(song.artworkUrl)}" width="44" height="44" alt="" style="display:block;border-radius:6px;">`
         : `<div style="width:44px;height:44px;border-radius:6px;background:${C.line};text-align:center;line-height:44px;color:${C.muted};">&#9834;</div>`;
       const meta = [song.album, song.year].filter(Boolean).join(" · ");
-      const picks = song.picks
+      const picks = byScore(song.picks)
         .map((p) => {
           if (p.label === null) {
             return `<tr><td style="padding:5px 0;width:22px;color:${C.muted};">&ndash;</td><td style="padding:5px 0;color:${C.body};">${escapeHtml(p.name)} <span style="color:${C.muted};">&middot; no answer</span></td><td></td></tr>`;
@@ -236,7 +244,7 @@ function resultsSection(results: GameResults) {
     ...results.songs.flatMap((song) => [
       "",
       `Song ${song.position}: ${song.title} – ${song.artist}`,
-      ...song.picks.map((p) =>
+      ...byScore(song.picks).map((p) =>
         p.label === null
           ? `  – ${p.name}: no answer`
           : `  ${p.correct ? "✓" : "✗"} ${p.name}: ${signed(p.points ?? 0)}` +
