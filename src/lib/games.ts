@@ -403,14 +403,16 @@ async function advanceIfRoundDone(gameId: string): Promise<void> {
 }
 
 /**
- * Total points from completed songs (ones every player has answered), best
- * first, so the standings always compare like with like.
+ * Each player's points for every song they've answered so far, best first,
+ * with how many songs they've played. Totals don't reveal which songs anyone
+ * got right, so they're shown to everyone in the game, even mid-round (in All
+ * songs mode, players who've finished see their full score straight away).
  */
 export async function standings(gameId: string) {
   const rows = await db.execute<{ user_id: string; name: string; points: string; correct: string; played: string }>(sql`
     select u.id as user_id, u.name,
-      coalesce(sum(a.points) filter (where gs.completed_at is not null), 0) as points,
-      count(a.id) filter (where gs.completed_at is not null and a.correct) as correct,
+      coalesce(sum(a.points) filter (where a.answered_at is not null), 0) as points,
+      count(a.id) filter (where a.answered_at is not null and a.correct) as correct,
       count(a.id) filter (where a.answered_at is not null) as played
     from game_players gp
     join users u on u.id = gp.user_id
@@ -425,7 +427,7 @@ export async function standings(gameId: string) {
     name: r.name,
     points: Number(r.points),
     correct: Number(r.correct),
-    /** Songs this player has answered, including ones others haven't yet (not counted in points). */
+    /** Songs this player has answered (all of them count in their points). */
     played: Number(r.played),
   }));
 }

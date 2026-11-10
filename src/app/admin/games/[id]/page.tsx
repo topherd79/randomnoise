@@ -100,7 +100,7 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
                 </li>
               ))}
             </ol>
-            <p className="mt-2 text-xs text-muted">Counts songs every player has answered.</p>
+            <p className="mt-2 text-xs text-muted">Points for every song each player has answered so far.</p>
           </div>
           {active && <GameControls gameId={game.id} />}
         </aside>

@@ -21,8 +21,9 @@ of what a right one would have earned, so guessing is worth zero on average). Pl
 answer on their own time. Songs open in rounds, by game mode (`src/lib/modes.ts`): **The OG** one
 song at a time (5–25 songs), **3 songs** three at a time (6/9/15/18 songs), **All songs** every song
 open from the start (5–25 songs). The next round opens only when everyone has answered every song in
-this one. Once you've answered a song you see everyone's picks for it so far; standings count only
-songs everyone has answered, and tapping a name in them shows that player's song-by-song history
+this one. Once you've answered a song you see everyone's picks for it so far; standings show each
+player's points for every song they've answered so far ("12 of 15 played"), and tapping a name in
+them shows that player's song-by-song history
 (only songs you've answered). The admin also plays, so admin screens never show the songs of a game
 in progress.
 

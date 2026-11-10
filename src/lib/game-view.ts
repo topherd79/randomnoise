@@ -84,9 +84,9 @@ export type GameView = {
   waitingNote: string;
   /** Every completed song, newest first (for the finished-game page). */
   history: ResultsView[];
-  /** Points from completed songs only, plus how many songs each player has played. */
+  /** Each player's points for every song they've answered so far, and how many they've played. */
   standings: Standing[];
-  /** How many songs every player has answered (what the standings count). */
+  /** How many songs every player has answered. */
   completedCount: number;
 };
 
