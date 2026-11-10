@@ -107,16 +107,12 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
       )}
 
       {/* Tap a name for that player's song-by-song history (songs I've answered only). */}
-      {(view.completedCount > 0 || view.songs.length > 0) && (
+      {view.standings.some((s) => s.played > 0) && (
         <Standings
           standings={view.standings}
           songs={view.songs}
-          title={
-            view.completedCount > 0
-              ? `Standings after ${view.completedCount} ${view.completedCount === 1 ? "song" : "songs"}`
-              : "Standings"
-          }
-          played={view.roundLength > 1 ? { songCount: view.songCount } : undefined}
+          title="Standings so far"
+          played={{ songCount: view.songCount }}
         />
       )}
     </div>

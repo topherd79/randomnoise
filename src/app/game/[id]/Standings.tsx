@@ -25,7 +25,7 @@ export function Standings({
   standings: Standing[];
   songs: ResultsView[];
   title?: string;
-  /** Show "6 of 9 played" for each player (modes with several songs open). */
+  /** Show "6 of 9 played" for each player (while the game is on). */
   played?: { songCount: number };
 }) {
   const [open, setOpen] = useState<string | null>(null);
@@ -38,8 +38,7 @@ export function Standings({
           const isOpen = open === s.userId;
           const history = songs.flatMap((r) => {
             const pick = r.picks.find((p) => p.userId === s.userId);
-            // A song counts in the standings once nobody is still to play it.
-            return pick ? [{ song: r, pick, counted: !r.picks.some((p) => p.pending) }] : [];
+            return pick ? [{ song: r, pick }] : [];
           });
           return (
             <li key={s.userId}>
@@ -72,8 +71,8 @@ export function Standings({
               </button>
               {isOpen && (
                 <ul className="border-t border-line bg-bg/40 px-4 py-1" aria-label={`${s.name}'s songs`}>
-                  {history.map(({ song, pick, counted }) => (
-                    <HistoryRow key={song.position} position={song.position} title={song.song.title} artist={song.song.artist} pick={pick} counted={counted} />
+                  {history.map(({ song, pick }) => (
+                    <HistoryRow key={song.position} position={song.position} title={song.song.title} artist={song.song.artist} pick={pick} />
                   ))}
                 </ul>
               )}
@@ -91,13 +90,11 @@ function HistoryRow({
   title,
   artist,
   pick,
-  counted,
 }: {
   position: number;
   title: string;
   artist: string;
   pick: Pick;
-  counted: boolean;
 }) {
   const answered = pick.label !== null;
   const detail = pick.pending
@@ -124,7 +121,6 @@ function HistoryRow({
         </span>
         <span className="block text-xs text-muted">
           {detail}
-          {!counted && !pick.pending && " · not counted yet"}
         </span>
       </span>
       {pick.points !== null && !pick.pending && (

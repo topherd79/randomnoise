@@ -7,7 +7,7 @@ vi.mock("next/server", () => ({ after: (fn: () => unknown) => void afterTasks.pu
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { gameSongs, games, users } from "@/db/schema";
+import { answers, gameSongs, games, users } from "@/db/schema";
 import { afterPlayerRemoved, answerSong, cancelGame, createGame, mayPlayClip, nudge, resetAttempt, startSong } from "@/lib/games";
 import { loadGameView, myGames } from "@/lib/game-view";
 import { gameProgress } from "@/lib/admin-games";
@@ -201,6 +201,14 @@ describe("All songs mode", () => {
     expect(mikeView.next).toBeNull();
     expect(mikeView.waitingOn).toEqual([{ userId: sarah, name: "Sarah", left: 5 }]);
     expect(mikeView.waitingNote).toMatch(/every song/);
+    // Mike's full score shows while Sarah is still playing: every song he's answered counts.
+    const mikePoints = (await db.select({ points: answers.points }).from(answers).where(eq(answers.userId, mike))).reduce(
+      (sum, a) => sum + (a.points ?? 0),
+      0,
+    );
+    expect(mikePoints).toBeGreaterThan(0);
+    expect(mikeView.standings.find((s) => s.userId === mike)).toMatchObject({ points: mikePoints, played: 5, correct: 5 });
+    expect(mikeView.standings.find((s) => s.userId === sarah)).toMatchObject({ points: 0, played: 0 });
 
     const home = await myGames(sarah);
     expect(home.active[0]).toMatchObject({ myTurn: true, nextPosition: 1, label: "All 5 songs", waitingOn: [] });
