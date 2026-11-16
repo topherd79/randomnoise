@@ -1,26 +1,37 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { myGames } from "@/lib/game-view";
+import { pastGames } from "@/lib/profiles";
 import { Logo } from "@/components/Logo";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { SubmitButton } from "@/components/SubmitButton";
 import { logout } from "./actions";
 import { listNames, waitingOnText } from "@/lib/modes";
+import { Avatar, PastGamesList, SectionTitle, gamesAndWins } from "./profile/parts";
 
+/** How many past games the home screen lists before "See all". */
+const RECENT = 3;
 
 export default async function Home() {
   const user = await requireUser();
-  const { active, finished } = await myGames(user.id);
+  const [active, past] = await Promise.all([myGames(user.id), pastGames(user.id)]);
+  const finished = past.filter((g) => g.status === "finished");
+  const record = { games: finished.length, wins: finished.filter((g) => g.won).length };
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(env(safe-area-inset-top),1.5rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)]">
       <header className="flex items-center justify-between">
         <Logo />
-        {user.isAdmin && (
-          <Link href="/admin" className="text-sm font-medium text-muted underline-offset-4 hover:underline">
-            Admin
+        <div className="flex items-center gap-3.5">
+          {user.isAdmin && (
+            <Link href="/admin" className="text-sm font-medium text-muted underline-offset-4 hover:underline">
+              Admin
+            </Link>
+          )}
+          <Link href="/profile" aria-label="Your profile">
+            <Avatar name={user.name} />
           </Link>
-        )}
+        </div>
       </header>
 
       {active.length === 0 ? (
@@ -58,21 +69,28 @@ export default async function Home() {
         </section>
       )}
 
-      {finished.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">Past games</h2>
-          <ul className="mt-3 divide-y divide-line overflow-hidden rounded-2xl bg-surface">
-            {finished.slice(0, 5).map((g) => (
-              <li key={g.id}>
-                <Link href={`/game/${g.id}`} className="flex justify-between px-4 py-3">
-                  <span>{g.songCount} songs</span>
-                  <span className="text-muted">
-                    {g.finishedAt?.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+      <Link href="/profile" className="mb-8 flex items-center gap-3.5 rounded-2xl bg-surface p-4 active:bg-surface-2">
+        <Avatar name={user.name} accent />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-[17px] font-bold">Your profile</span>
+          <span className="text-sm text-muted">{gamesAndWins(record)} · best guesses and stats</span>
+        </span>
+        <svg viewBox="0 0 16 16" className="size-4 shrink-0 text-muted" aria-hidden="true">
+          <path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </Link>
+
+      {past.length > 0 && (
+        <section className="mb-8 flex flex-col gap-3">
+          <div className="flex items-baseline justify-between">
+            <SectionTitle>Past games</SectionTitle>
+            {past.length > RECENT && (
+              <Link href="/profile/games" className="text-sm font-semibold text-accent">
+                See all {past.length}
+              </Link>
+            )}
+          </div>
+          <PastGamesList games={past.slice(0, RECENT)} />
         </section>
       )}
 

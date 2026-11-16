@@ -249,16 +249,16 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
   };
 }
 
-/** The games a player is in, newest first, with what's waiting for them. */
+/** The games in progress a player is in, newest first, with what's waiting for them. */
 export async function myGames(userId: string) {
   const rows = await db
     .select({ game: games })
     .from(games)
     .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, userId)))
-    .where(inArray(games.status, ["active", "finished"]))
+    .where(eq(games.status, "active"))
     .orderBy(desc(games.createdAt))
     .limit(20);
-  const active = rows.filter((r) => r.game.status === "active").map((r) => r.game);
+  const active = rows.map((r) => r.game);
 
   const states = await Promise.all(
     active.map(async (g) => {
@@ -289,8 +289,7 @@ export async function myGames(userId: string) {
       };
     }),
   );
-  const finished = rows.filter((r) => r.game.status === "finished").map((r) => ({ id: r.game.id, songCount: r.game.songCount, finishedAt: r.game.finishedAt }));
-  return { active: states, finished };
+  return states;
 }
 
 // ---------------------------------------------------------------------------

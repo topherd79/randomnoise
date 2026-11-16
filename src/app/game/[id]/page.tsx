@@ -31,7 +31,7 @@ export default async function GamePage(props: PageProps<"/game/[id]">) {
           {view.status === "active" ? view.label : view.status === "finished" ? "Final results" : "Game ended"}
         </span>
       </header>
-      {view.status === "active" ? <ActiveGame view={view} userId={user.id} /> : <OverGame view={view} />}
+      {view.status === "active" ? <ActiveGame view={view} userId={user.id} /> : <OverGame view={view} userId={user.id} />}
     </main>
   );
 }
@@ -109,6 +109,8 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
       {/* Tap a name for that player's song-by-song history (songs I've answered only). */}
       {view.standings.some((s) => s.played > 0) && (
         <Standings
+          gameId={view.id}
+          me={userId}
           standings={view.standings}
           songs={view.songs}
           title="Standings so far"
@@ -119,7 +121,7 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
   );
 }
 
-function OverGame({ view }: { view: GameView }) {
+function OverGame({ view, userId }: { view: GameView; userId: string }) {
   const top = view.standings[0];
   const winners = view.standings.filter((s) => s.points === top?.points);
   return (
@@ -138,7 +140,7 @@ function OverGame({ view }: { view: GameView }) {
           </p>
         )}
       </section>
-      <Standings standings={view.standings} songs={view.songs} title="Final standings" />
+      <Standings gameId={view.id} me={userId} standings={view.standings} songs={view.songs} title="Final standings" />
       {view.history.map((r) => (
         <ResultsCard key={r.position} results={r} title={`Song ${r.position}`} />
       ))}

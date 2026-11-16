@@ -1,7 +1,7 @@
 import "server-only";
-import { and, asc, between, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, between, count, desc, eq, exists, inArray, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { answers, gamePlayers, gameSongs, games, users } from "@/db/schema";
+import { answers, gamePlayers, gameSongs, games, users, type GameMode, type GameStatus } from "@/db/schema";
 import { roundState, standings } from "./games";
 import { nextPosition, openRound, roundLabel, songsLeft } from "./modes";
 
@@ -21,8 +21,47 @@ export type PlayerState = {
   resetGameSongId: string | null;
 };
 
-export async function gameSummaries() {
-  const rows = await db.select().from(games).orderBy(desc(games.createdAt)).limit(50);
+/** Narrows the All games list. */
+export type GameFilter = { status?: GameStatus; mode?: GameMode; playerId?: string };
+
+function filterWhere(f: GameFilter): SQL | undefined {
+  const conds: SQL[] = [];
+  if (f.status) conds.push(eq(games.status, f.status));
+  if (f.mode) conds.push(eq(games.mode, f.mode));
+  if (f.playerId) {
+    conds.push(
+      exists(
+        db
+          .select({ one: gamePlayers.gameId })
+          .from(gamePlayers)
+          .where(and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, f.playerId))),
+      ),
+    );
+  }
+  return conds.length ? and(...conds) : undefined;
+}
+
+/** How many games match, by status (for the All games filters). */
+export async function countGames(f: Omit<GameFilter, "status"> = {}) {
+  const rows = await db.select({ status: games.status, n: count() }).from(games).where(filterWhere(f)).groupBy(games.status);
+  const of = (s: GameStatus) => rows.find((r) => r.status === s)?.n ?? 0;
+  return {
+    all: rows.reduce((sum, r) => sum + r.n, 0),
+    active: of("active"),
+    finished: of("finished"),
+    cancelled: of("cancelled"),
+  };
+}
+
+/** Games newest first, with progress (games in progress) or the leader (games that are over). */
+export async function gameSummaries(opts: GameFilter & { limit: number; offset?: number }) {
+  const rows = await db
+    .select()
+    .from(games)
+    .where(filterWhere(opts))
+    .orderBy(desc(games.createdAt), desc(games.id))
+    .limit(opts.limit)
+    .offset(opts.offset ?? 0);
   if (rows.length === 0) return [];
   const ids = rows.map((g) => g.id);
   const players = await db

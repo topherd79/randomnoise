@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { Standing } from "@/lib/games";
 import type { Pick, ResultsView } from "@/lib/game-view";
@@ -17,11 +18,16 @@ const secs = (ms: number) => formatSeconds(ms).replace(" ", "\u00a0");
  * song once the game is over), so a history never gives an answer away.
  */
 export function Standings({
+  gameId,
+  me,
   standings,
   songs,
   title = "Standings",
   played,
 }: {
+  gameId: string;
+  /** The viewer: their own row links to their profile. */
+  me: string;
   standings: Standing[];
   songs: ResultsView[];
   title?: string;
@@ -74,13 +80,24 @@ export function Standings({
                   {history.map(({ song, pick }) => (
                     <HistoryRow key={song.position} position={song.position} title={song.song.title} artist={song.song.artist} pick={pick} />
                   ))}
+                  <li className="pb-2 pt-2.5">
+                    <Link
+                      href={s.userId === me ? "/profile" : `/players/${s.userId}?from=${gameId}`}
+                      className="flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-surface-2 font-semibold"
+                    >
+                      {s.userId === me ? "Your profile" : `${s.name}'s profile`}
+                      <svg viewBox="0 0 16 16" className="size-3.5" aria-hidden="true">
+                        <path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </Link>
+                  </li>
                 </ul>
               )}
             </li>
           );
         })}
       </ol>
-      {songs.length > 0 && <p className="text-xs text-muted">Tap a name to see their songs.</p>}
+      {songs.length > 0 && <p className="text-xs text-muted">Tap a name to see their songs and their profile.</p>}
     </section>
   );
 }
