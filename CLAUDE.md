@@ -86,7 +86,8 @@ in progress.
   catalog's "Show: Same song more than once" lists them. Answer choices show `cleanTitle()`, which
   hides release labels ("(2015 Remaster)", "(Album Version)") but keeps "(Live …)", "(Acoustic)".
 - **Genres** go through `canonicalGenre()` (`src/lib/genres.ts`) on upload, lookup and edit, so
-  French-tagged files ("Alternatif et Indé") don't split a genre in the start-a-game filter.
+  French-tagged files ("Alternatif et Indé") don't split a genre in the start-a-game filter. The catalog
+  flags a song with no genre (once its lookup has run) with an orange "Missing genre" chip.
 - **Switched-off songs** (`songs.active = false`) stay in the catalog but new games leave them out
   entirely: never drawn, never a wrong answer (`createGame` in `src/lib/games.ts`). Games already
   created are unaffected. Clip lengths are `CLIP_LENGTHS` in `src/lib/clips.ts` (5/10/20/30 s).
