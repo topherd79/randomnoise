@@ -9,19 +9,40 @@ and games from a desktop browser.
 
 ## What works so far
 
-- Magic-link login (link → "Tap to log in" page → logged in for a year)
-- Admin player list: add, edit, remove, copy a login link, email a login link or invite
-- Song catalog: drop in a folder of songs; title and artist come from each file, then artwork, year,
-  genre and an Apple Music link are looked up. Each song has a clip setting (surprise me, start of
-  song, or spots picked on its sound wave) and can have a custom clip.
-- Games: the admin picks a game mode (The OG: one song at a time; 3 songs: three at a time; All
-  songs: every song open from the start), 1–5 players, the number of songs, a clip length and random
-  or "similar era and genre" wrong answers. Clips are cut when the game is created. Players tap Play,
-  the four answers reveal letter by letter, and the server keeps the clock and the score. Once you've
-  answered a song you see everyone's picks so far; the next round opens when everyone has played
-  every open song. Emails: game on, results are
-  in, nudge, game over. The admin's game page shows progress only (never the songs) and can reset a
-  player's attempt or end a game.
+- **Login:** magic links only. The link opens a "Tap to log in" page, and only its button logs you in
+  (for a year), so email scanners and message previews can't use the link up.
+- **Players (admin):** add, edit or remove players; copy or email a login link; send an invite.
+- **Catalog (admin):**
+  - Drop in a folder of songs. MP3s and iTunes M4As are kept; WAV, AIFF and lossless files become MP3s.
+    Uploads go one at a time and retry a dropped connection; the same file twice is skipped.
+  - Title and artist come from each file, then artwork, album, year, genre and links are looked up
+    (Apple's search, with Spotify as a fallback).
+  - Each song can be switched in or out of games. It has a clip setting (surprise me, start of song,
+    or spots picked on its sound wave), and can have its own clip length or a custom clip.
+  - Browse by artist or recently added, narrow by decade and genre tags, and list songs that need a
+    look, the same song uploaded more than once, or songs missing a genre (orange chip). Download the
+    whole catalog as a CSV.
+- **Starting a game (admin):**
+  - Pick a mode: The OG (one song at a time), 3 songs (three at a time) or All songs (every song open
+    from the start).
+  - Pick 1–5 players, the number of songs, a clip length (20 seconds by default), and random or
+    "similar era and genre" wrong answers.
+  - Which songs: "New songs only", or "Include songs from earlier games" (the default), which draws at
+    random from every song.
+  - Optional filters: decades; genres to include (green) or leave out (red); and artists whose songs
+    come first, without the usual one-song-per-artist-for-every-five limit.
+- **Playing:** tap Play; the clip starts and four answers reveal letter by letter, and the server keeps
+  the clock and the score. After answering you see everyone's picks so far; the next round opens when
+  everyone has played every open song. Standings show everyone's points so far; tap a name for that
+  player's song-by-song history. Pages update by themselves as others play.
+- **Profiles:** your profile (games, wins, % right, average answer time, top three guesses, best and
+  worst genre and decade) and every past game; a friend's short profile from a name in the standings.
+  Only games that are over count.
+- **Admin games:** a game in progress shows progress only, never the songs, since the admin plays too.
+  The admin can reset a player's attempt or end a game early. The Games page shows the 5 most recent
+  games, and All games lists every game with status, mode and player filters. A game that's over
+  shows every song and pick.
+- **Emails:** invite, login link, game on, nudge, and game over (with every song's results).
 
 The scoring numbers live in `src/lib/rules.ts`, ready to tune after test games.
 
