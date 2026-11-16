@@ -77,7 +77,6 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
   const [clipLength, setClipLength] = useState<number>(20);
   const [wrong, setWrong] = useState<"random" | "similar">("random");
   const canCreate = fits.length > 0 && picked.size > 0;
-  const repeats = Math.max(0, songCount - unplayed);
 
   function choosePool(p: Pool) {
     setPool(p);
@@ -187,9 +186,9 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
         <p className="mt-2 text-xs text-muted">
           {pool === "new"
             ? "Only songs no game has used yet."
-            : repeats > 0
-              ? `New songs first, then ${repeats} from earlier games (the ones played longest ago), mixed in at random. Players may remember those.`
-              : "New songs first; songs from earlier games only fill in if there aren't enough new ones."}
+            : `Drawn at random from all ${catalogSize} ${catalogSize === 1 ? "song" : "songs"}${filtering ? " that match" : ""}, new or played${
+                catalogSize > unplayed ? `, so songs from earlier games (${catalogSize - unplayed} of them) can come up` : ""
+              }.`}
         </p>
       </fieldset>
 

@@ -38,8 +38,8 @@ type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 /**
  * Which songs a new game may use:
- * - new: only songs no earlier game has used (the default)
- * - mix: new songs first, then songs from earlier games, the ones played longest ago first
+ * - new: only songs no earlier game has used
+ * - mix: every switched-on song, new or played, equally likely
  */
 export type SongPool = "new" | "mix";
 
@@ -99,15 +99,11 @@ export async function createGame(opts: {
     seen.add(k);
     return true;
   });
-  const fresh = distinct.filter((c) => lastUsed(c) === null);
-  // With "include songs from earlier games", those come after the new ones,
-  // the ones played longest ago first (ties stay in random order).
-  const earlier =
-    songPool === "mix"
-      ? distinct.filter((c) => lastUsed(c) !== null).sort((a, b) => lastUsed(a)! - lastUsed(b)!)
-      : [];
+  // "New songs only": songs no game has used. "Include songs from earlier games":
+  // every song, new or played, equally likely (the candidates come in random order).
+  const drawFrom = songPool === "mix" ? distinct : distinct.filter((c) => lastUsed(c) === null);
   // No more than one song per artist for every five in the game, where the catalog allows.
-  const chosen = pickSpreadOut(fresh, earlier, songCount, maxSongsPerArtist(songCount));
+  const chosen = pickSpreadOut(drawFrom, songCount, maxSongsPerArtist(songCount));
   if (chosen.length < songCount) {
     const drawn = chosen;
     const which = filtered ? " that match these filters" : "";
@@ -119,8 +115,8 @@ export async function createGame(opts: {
           : `There are only ${drawn.length} new songs${which} (switched on, not played yet). Include songs from earlier games, ${filtered ? "loosen the filters" : "add or turn on more songs"}, or pick a shorter game.`,
     };
   }
-  // Load the picked songs, in a shuffled play order (so songs from earlier games
-  // aren't bunched at the end).
+  // Load the picked songs, in a shuffled play order (the artist limit can leave
+  // its fill-ins bunched at the end).
   const rowsById = new Map(
     (await db.select().from(songs).where(inArray(songs.id, chosen.map((c) => c.id)))).map((r) => [r.id, r]),
   );

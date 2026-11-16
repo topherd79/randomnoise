@@ -30,52 +30,51 @@ describe("maxSongsPerArtist", () => {
 describe("pickSpreadOut", () => {
   it("keeps to the limit when there are enough artists", () => {
     // 6 Queen songs first in line, plus plenty of others.
-    const fresh = [
+    const candidates = [
       ...Array.from({ length: 6 }, (_, i) => song(`q${i}`, "Queen")),
       ...Array.from({ length: 10 }, (_, i) => song(`o${i}`, `Artist ${i}`)),
     ];
-    const picked = pickSpreadOut(fresh, [], 10, 2);
+    const picked = pickSpreadOut(candidates, 10, 2);
     expect(picked).toHaveLength(10);
     expect(countBy(picked).Queen).toBe(2);
     expect(Math.max(...Object.values(countBy(picked)))).toBeLessThanOrEqual(2);
   });
 
   it("a 5-song game has five different artists when possible", () => {
-    const fresh = ["A", "A", "B", "B", "C", "D", "E", "F"].map((a, i) => song(String(i), a));
-    const picked = pickSpreadOut(fresh, [], 5, maxSongsPerArtist(5));
+    const candidates = ["A", "A", "B", "B", "C", "D", "E", "F"].map((a, i) => song(String(i), a));
+    const picked = pickSpreadOut(candidates, 5, maxSongsPerArtist(5));
     expect(new Set(picked.map((s) => s.artist)).size).toBe(5);
   });
 
   it("treats artist names case- and spacing-insensitively", () => {
-    const fresh = [song("1", "Queen"), song("2", "queen "), song("3", "QUEEN"), song("4", "ABBA"), song("5", "Journey")];
-    const picked = pickSpreadOut(fresh, [], 3, 1);
+    const candidates = [song("1", "Queen"), song("2", "queen "), song("3", "QUEEN"), song("4", "ABBA"), song("5", "Journey")];
+    const picked = pickSpreadOut(candidates, 3, 1);
     expect(picked.map((s) => s.id)).toEqual(["1", "4", "5"]);
   });
 
   it("never blocks a game: fills the rest as evenly as possible when artists run out", () => {
     // Two artists only (e.g. an artist filter), 10-song game, limit 2.
-    const fresh = [
+    const candidates = [
       ...Array.from({ length: 8 }, (_, i) => song(`q${i}`, "Queen")),
       ...Array.from({ length: 8 }, (_, i) => song(`k${i}`, "The Killers")),
     ];
-    const picked = pickSpreadOut(fresh, [], 10, 2);
+    const picked = pickSpreadOut(candidates, 10, 2);
     expect(picked).toHaveLength(10);
     expect(countBy(picked)).toEqual({ Queen: 5, "The Killers": 5 });
   });
 
-  it("takes new songs before songs from earlier games", () => {
-    const fresh = [song("n1", "A"), song("n2", "B")];
-    const earlier = [song("e1", "C"), song("e2", "D"), song("e3", "E")];
-    expect(pickSpreadOut(fresh, earlier, 4, 1).map((s) => s.id)).toEqual(["n1", "n2", "e1", "e2"]);
+  it("takes songs in the order given (the draw shuffles them first), new and played alike", () => {
+    const candidates = [song("played1", "C"), song("new1", "A"), song("played2", "D"), song("new2", "B")];
+    expect(pickSpreadOut(candidates, 3, 1).map((s) => s.id)).toEqual(["played1", "new1", "played2"]);
   });
 
   it("returns fewer songs only when there aren't enough at all", () => {
-    expect(pickSpreadOut([song("1", "A"), song("2", "A")], [], 5, 1)).toHaveLength(2);
+    expect(pickSpreadOut([song("1", "A"), song("2", "A")], 5, 1)).toHaveLength(2);
   });
 
   it("never picks the same song twice", () => {
-    const fresh = Array.from({ length: 30 }, (_, i) => song(String(i), `Artist ${i % 4}`));
-    const picked = pickSpreadOut(fresh, [], 25, 5);
+    const candidates = Array.from({ length: 30 }, (_, i) => song(String(i), `Artist ${i % 4}`));
+    const picked = pickSpreadOut(candidates, 25, 5);
     expect(new Set(picked.map((s) => s.id)).size).toBe(picked.length);
   });
 });

@@ -133,23 +133,36 @@ describe("creating a game", () => {
     if (!tooFew.ok) expect(tooFew.error).toMatch(/only 1 switched-on songs that match these filters/);
   });
 
-  it("'new songs only' refuses when there aren't enough; 'include earlier' tops up", async () => {
+  it("'new songs only' refuses when there aren't enough; 'include earlier' draws from every song at random", async () => {
     const me = await addUser("Topher");
-    await addVariedSongs(7);
+    await addVariedSongs(10);
     const first = await createGame({ ...base, playerIds: [me], songCount: 5, createdBy: me });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
-
-    const strict = await createGame({ ...base, playerIds: [me], songCount: 5, createdBy: me });
-    expect(strict).toMatchObject({ ok: false });
-    if (!strict.ok) expect(strict.error).toMatch(/only 2 new songs/);
-
-    const mixed = await createGame({ ...base, playerIds: [me], songCount: 5, songPool: "mix", createdBy: me });
-    expect(mixed.ok).toBe(true);
-    if (!mixed.ok) return;
     const firstIds = new Set((await roundsOf(first.gameId)).map((g) => g.songId));
-    const reused = (await roundsOf(mixed.gameId)).filter((g) => firstIds.has(g.songId));
-    expect(reused).toHaveLength(3); // the 2 new songs, then 3 from the earlier game
+
+    const strict = await createGame({ ...base, playerIds: [me], songCount: 10, createdBy: me });
+    expect(strict).toMatchObject({ ok: false });
+    if (!strict.ok) expect(strict.error).toMatch(/only 5 new songs/);
+
+    // 5 new songs are still enough for a 5-song game, yet played songs come up too: the draw
+    // doesn't prefer new ones. (All 5 new by chance: 1 in 252 a try.)
+    let mixesInPlayed = false;
+    for (let attempt = 0; attempt < 8 && !mixesInPlayed; attempt++) {
+      const mixed = await createGame({ ...base, playerIds: [me], songCount: 5, songPool: "mix", createdBy: me });
+      expect(mixed.ok).toBe(true);
+      if (!mixed.ok) return;
+      const ids = (await roundsOf(mixed.gameId)).map((g) => g.songId);
+      expect(new Set(ids).size).toBe(5);
+      mixesInPlayed = ids.some((id) => firstIds.has(id));
+      // Ended before anyone played: its songs don't count as used.
+      await cancelGame(mixed.gameId);
+    }
+    expect(mixesInPlayed).toBe(true);
+
+    // And a game as long as the whole catalog uses every song.
+    const all = await createGame({ ...base, playerIds: [me], songCount: 10, songPool: "mix", createdBy: me });
+    expect(all.ok).toBe(true);
   });
 });
 
