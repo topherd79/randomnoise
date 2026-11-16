@@ -75,6 +75,9 @@ in progress.
   are exact only if `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` are set, otherwise a search link.
   Songs looked up before the keys were set get exact links from the catalog page's "Find exact
   Spotify links" (`fillSpotifyLinkFor` in `src/lib/catalog.ts`, which also fills past games' snapshots).
+- **Uploads** (`src/app/admin/catalog/Uploader.tsx`) go one file at a time; a dropped connection
+  (status 0, 499 or 5xx, or the server's "The upload was interrupted.") retries after 3, 10 and 30 s,
+  and "Retry N failed uploads" re-queues the rest. The same file twice is skipped (`songs.file_hash`).
 - **Audio responses** must support HTTP Range (`serveFile` in `src/lib/storage.ts`): iPhone Safari won't
   play audio without it.
 - **Game rules and numbers** (reveal time, cutoff, points, guessing penalty) are all in
