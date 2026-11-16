@@ -53,3 +53,24 @@ export function matchesFilters(song: { year: number | null; genre: string | null
 export function isPreferred(song: { artist: string }, f: Pick<SongFilters, "artists">): boolean {
   return f.artists.length > 0 && f.artists.map(filterKey).includes(filterKey(song.artist));
 }
+
+/**
+ * What each decade and genre chip on the game form would leave you with, given
+ * the other picks: a decade's count follows the genre chips (green and red), a
+ * genre's count follows the decade chips. Picked artists don't narrow anything,
+ * so they don't change the counts.
+ */
+export function chipCounts(
+  songs: { year: number | null; genre: string | null }[],
+  f: SongFilters,
+): { decades: Map<number, number>; genres: Map<string, number> } {
+  const decades = new Map<number, number>();
+  const genres = new Map<string, number>();
+  const bump = <K,>(m: Map<K, number>, k: K) => m.set(k, (m.get(k) ?? 0) + 1);
+  for (const s of songs) {
+    if (s.year !== null && matchesFilters(s, { ...f, decades: [] })) bump(decades, decadeOf(s.year));
+    const g = s.genre ? filterKey(s.genre) : "";
+    if (g && matchesFilters(s, { ...f, genres: [], excludeGenres: [] })) bump(genres, g);
+  }
+  return { decades, genres };
+}

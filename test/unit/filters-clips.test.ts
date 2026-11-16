@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clampStart, pickClipStart, surpriseStart } from "@/lib/clips";
-import { decadeOf, filterKey, hasFilters, isPreferred, matchesFilters, NO_FILTERS } from "@/lib/song-filters";
+import { chipCounts, decadeOf, filterKey, hasFilters, isPreferred, matchesFilters, NO_FILTERS } from "@/lib/song-filters";
 import { normalize } from "@/lib/normalize";
 
 describe("song filters", () => {
@@ -43,6 +43,44 @@ describe("song filters", () => {
     expect(matchesFilters(song, { ...NO_FILTERS, decades: [2000], excludeGenres: ["pop"] })).toBe(true);
     expect(hasFilters({ ...NO_FILTERS, excludeGenres: ["pop"] })).toBe(true);
     expect(hasFilters(NO_FILTERS)).toBe(false);
+  });
+});
+
+describe("chip counts on the game form", () => {
+  const songs = [
+    { year: 1975, genre: "Rock" },
+    { year: 1977, genre: "Rock" },
+    { year: 1981, genre: "Rock" },
+    { year: 1984, genre: "Pop" },
+    { year: 1997, genre: "Alternative" },
+    { year: null, genre: "Pop" },
+    { year: 1999, genre: null },
+  ];
+  const at = (m: Map<number | string, number>, k: number | string) => m.get(k) ?? 0;
+
+  it("with nothing picked, counts every song", () => {
+    const c = chipCounts(songs, NO_FILTERS);
+    expect([1970, 1980, 1990].map((d) => at(c.decades, d))).toEqual([2, 2, 2]);
+    expect(["rock", "pop", "alternative"].map((g) => at(c.genres, g))).toEqual([3, 2, 1]);
+  });
+
+  it("decade counts follow the genre chips, genre counts follow the decade chips", () => {
+    const rock = chipCounts(songs, { ...NO_FILTERS, genres: ["rock"] });
+    expect([1970, 1980, 1990].map((d) => at(rock.decades, d))).toEqual([2, 1, 0]);
+    // A genre's own count ignores the genre chips, so you can see what adding another would bring.
+    expect(at(rock.genres, "pop")).toBe(2);
+
+    const eighties = chipCounts(songs, { ...NO_FILTERS, decades: [1980] });
+    expect(["rock", "pop", "alternative"].map((g) => at(eighties.genres, g))).toEqual([1, 1, 0]);
+  });
+
+  it("left-out genres come off the decade counts", () => {
+    const noRock = chipCounts(songs, { ...NO_FILTERS, excludeGenres: ["rock"] });
+    expect([1970, 1980, 1990].map((d) => at(noRock.decades, d))).toEqual([0, 1, 2]);
+  });
+
+  it("picked artists don't change the counts", () => {
+    expect(chipCounts(songs, { ...NO_FILTERS, artists: ["queen"] })).toEqual(chipCounts(songs, NO_FILTERS));
   });
 });
 

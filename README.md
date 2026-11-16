@@ -30,11 +30,13 @@ and games from a desktop browser.
   - Which songs: "New songs only", or "Include songs from earlier games" (the default), which draws at
     random from every song.
   - Optional filters: decades; genres to include (green) or leave out (red); and artists whose songs
-    come first, without the usual one-song-per-artist-for-every-five limit.
+    come first, without the usual one-song-per-artist-for-every-five limit. Each decade and genre
+    chip's count follows your other picks, and a chip that would leave no songs is dimmed.
 - **Playing:** tap Play; the clip starts and four answers reveal letter by letter, and the server keeps
   the clock and the score. After answering you see everyone's picks so far; the next round opens when
   everyone has played every open song. Standings show everyone's points so far; tap a name for that
-  player's song-by-song history. Pages update by themselves as others play.
+  player's song-by-song history. Pages update by themselves as others play. When everyone else is
+  done, the last player sees who's waiting on them.
 - **Profiles:** your profile (games, wins, % right, average answer time, top three guesses, best and
   worst genre and decade) and every past game; a friend's short profile from a name in the standings.
   Only games that are over count.

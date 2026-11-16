@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { loadGameView, type GameView } from "@/lib/game-view";
 import { formatPoints, formatSeconds } from "@/lib/rules";
+import { waitingOnYouText } from "@/lib/modes";
 import { Logo } from "@/components/Logo";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { PlayRound } from "./PlayRound";
@@ -58,6 +59,12 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
   }
 
   const latest = view.latest;
+  // Everyone else has played every open song: say so to the one they're waiting on.
+  const leftOf = (uid: string) => view.waitingOn.find((w) => w.userId === uid)?.left ?? 0;
+  const waitingOnYou = waitingOnYouText(
+    view.players.filter((p) => p.userId !== userId).map((p) => ({ name: p.name, left: leftOf(p.userId) })),
+    leftOf(userId),
+  );
   // The song I just answered gets the big "how you did"; a song from a round
   // that's already over is just its results.
   const justPlayed = latest && latest.position >= view.roundStart;
@@ -89,6 +96,11 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
 
       {next ? (
         <div className="flex flex-1 flex-col">
+          {waitingOnYou && (
+            <p className="mb-4 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 font-semibold text-ink" role="status">
+              {waitingOnYou}
+            </p>
+          )}
           {latest && <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">Up next</h2>}
           <PlayRound
             key={next.gameSongId}

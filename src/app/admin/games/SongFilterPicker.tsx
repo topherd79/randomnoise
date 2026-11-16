@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useRef, useState } from "react";
-import { decadeOf, filterKey, type SongMeta } from "@/lib/song-filters";
+import { chipCounts, decadeOf, filterKey, type SongMeta } from "@/lib/song-filters";
 
 export type FilterState = {
   decades: Set<number>;
@@ -30,14 +30,36 @@ function groupOptions(values: string[]): Option<string>[] {
   });
 }
 
-function Chip({ checked, onChange, name, value, children }: { checked: boolean; onChange: () => void; name: string; value: string; children: React.ReactNode }) {
+/** Shown on a chip that's off and would leave no songs with the other picks. */
+const NONE_LEFT = "No songs left with your other picks";
+
+function Chip({
+  checked,
+  onChange,
+  name,
+  value,
+  disabled = false,
+  children,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  name: string;
+  value: string;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <label
-      className={`cursor-pointer rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
-        checked ? "border-accent bg-accent/10 text-ink" : "border-line text-ink hover:border-muted"
+      title={disabled ? NONE_LEFT : undefined}
+      className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+        checked
+          ? "cursor-pointer border-accent bg-accent/10 text-ink"
+          : disabled
+            ? "cursor-not-allowed border-line text-ink opacity-35"
+            : "cursor-pointer border-line text-ink hover:border-muted"
       }`}
     >
-      <input type="checkbox" name={name} value={value} checked={checked} onChange={onChange} className="sr-only" />
+      <input type="checkbox" name={name} value={value} checked={checked} disabled={disabled} onChange={onChange} className="sr-only" />
       {children}
     </label>
   );
@@ -51,18 +73,36 @@ const SAYS: Record<GenreState, string> = { off: "not filtered", in: "included", 
  * A genre chip that cycles with each tap: off → included (green) → left out
  * (red) → off. Submits as a genre or excludeGenre form field.
  */
-function GenreChip({ label, state, value, onNext, children }: { label: string; state: GenreState; value: string; onNext: () => void; children: React.ReactNode }) {
+function GenreChip({
+  label,
+  state,
+  value,
+  disabled = false,
+  onNext,
+  children,
+}: {
+  label: string;
+  state: GenreState;
+  value: string;
+  disabled?: boolean;
+  onNext: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
       onClick={onNext}
-      aria-label={`${label}: ${SAYS[state]}. Tap to ${state === "off" ? "include" : state === "in" ? "leave out" : "clear"}.`}
+      disabled={disabled}
+      title={disabled ? NONE_LEFT : undefined}
+      aria-label={`${label}: ${SAYS[state]}. ${disabled ? `${NONE_LEFT}.` : `Tap to ${state === "off" ? "include" : state === "in" ? "leave out" : "clear"}.`}`}
       className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
         state === "in"
           ? "border-accent bg-accent/10 text-ink"
           : state === "out"
             ? "border-danger bg-danger/10 text-danger"
-            : "border-line text-ink hover:border-muted"
+            : disabled
+              ? "cursor-not-allowed border-line text-ink opacity-35"
+              : "border-line text-ink hover:border-muted"
       }`}
     >
       {state === "in" && <input type="hidden" name="genre" value={value} />}
@@ -80,10 +120,13 @@ function GenreChip({ label, state, value, onNext, children }: { label: string; s
  */
 export function SongFilterPicker({
   songs,
+  newOnly = false,
   value,
   onChange,
 }: {
   songs: SongMeta[];
+  /** "New songs only": chip counts leave out songs a game has used. */
+  newOnly?: boolean;
   value: FilterState;
   onChange: (next: FilterState) => void;
 }) {
@@ -97,6 +140,18 @@ export function SongFilterPicker({
     [songs],
   );
   const artistOptions = useMemo(() => groupOptions(songs.map((s) => s.artist)).sort((a, b) => a.label.localeCompare(b.label)), [songs]);
+  // The chips stay put (every decade and genre in the catalog); their counts
+  // follow the other picks, and a chip that's off and would leave no songs is dimmed.
+  const live = useMemo(
+    () =>
+      chipCounts(newOnly ? songs.filter((s) => !s.played) : songs, {
+        decades: [...value.decades],
+        genres: [...value.genres],
+        excludeGenres: [...value.excludeGenres],
+        artists: [],
+      }),
+    [songs, newOnly, value.decades, value.genres, value.excludeGenres],
+  );
 
   const setGenre = (v: FilterState, key: string, to: GenreState): FilterState => {
     const genres = new Set(v.genres);
@@ -121,17 +176,22 @@ export function SongFilterPicker({
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted">Decades</p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {decadeOptions.map((o) => (
-              <Chip
-                key={o.key}
-                name="decade"
-                value={String(o.key)}
-                checked={value.decades.has(o.key)}
-                onChange={() => onChange({ ...value, decades: toggle(value.decades, o.key) })}
-              >
-                {o.label} <span className="font-normal text-muted">{o.count}</span>
-              </Chip>
-            ))}
+            {decadeOptions.map((o) => {
+              const n = live.decades.get(o.key) ?? 0;
+              const on = value.decades.has(o.key);
+              return (
+                <Chip
+                  key={o.key}
+                  name="decade"
+                  value={String(o.key)}
+                  checked={on}
+                  disabled={!on && n === 0}
+                  onChange={() => onChange({ ...value, decades: toggle(value.decades, o.key) })}
+                >
+                  {o.label} <span className="font-normal text-muted">{n}</span>
+                </Chip>
+              );
+            })}
           </div>
         </div>
       )}
@@ -144,9 +204,17 @@ export function SongFilterPicker({
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {genreOptions.map((o) => {
               const state: GenreState = value.genres.has(o.key) ? "in" : value.excludeGenres.has(o.key) ? "out" : "off";
+              const n = live.genres.get(o.key) ?? 0;
               return (
-                <GenreChip key={o.key} label={o.label} value={o.key} state={state} onNext={() => onChange(setGenre(value, o.key, NEXT[state]))}>
-                  {o.label} <span className={`font-normal ${state === "out" ? "text-danger/70" : "text-muted"}`}>{o.count}</span>
+                <GenreChip
+                  key={o.key}
+                  label={o.label}
+                  value={o.key}
+                  state={state}
+                  disabled={state === "off" && n === 0}
+                  onNext={() => onChange(setGenre(value, o.key, NEXT[state]))}
+                >
+                  {o.label} <span className={`font-normal ${state === "out" ? "text-danger/70" : "text-muted"}`}>{n}</span>
                 </GenreChip>
               );
             })}

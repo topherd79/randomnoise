@@ -87,3 +87,15 @@ export function waitingOnText(waiters: { name: string; left: number }[], roundLe
   if (roundLength <= 1) return listNames(waiters.map((w) => w.name));
   return listNames(waiters.map((w) => `${w.name} (${w.left} ${w.left === 1 ? "song" : "songs"} left)`));
 }
+
+/**
+ * For the one player holding up the open round, once everyone else is done:
+ * "Sarah and Topher are waiting on you." or, with several songs left, "…waiting
+ * on your last 4 songs." Null while anyone else still has songs to play, or
+ * when nobody else is in the game.
+ */
+export function waitingOnYouText(others: { name: string; left: number }[], myLeft: number): string | null {
+  if (others.length === 0 || myLeft === 0 || others.some((o) => o.left > 0)) return null;
+  const who = `${listNames(others.map((o) => o.name))} ${others.length === 1 ? "is" : "are"} waiting on`;
+  return myLeft === 1 ? `${who} you.` : `${who} your last ${myLeft} songs.`;
+}

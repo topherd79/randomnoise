@@ -5,7 +5,7 @@ import { answers, gamePlayers, gameSongs, games, songs, users, type Choice, type
 import { appleMusicLink, spotifyLink } from "./links";
 import { choiceLabel, shuffleFor } from "./rules";
 import { roundState, standings, type Standing } from "./games";
-import { inRound, nextPosition, openRound, roundLabel, songsLeft, waitingNote } from "./modes";
+import { inRound, nextPosition, openRound, roundLabel, songsLeft, waitingNote, waitingOnYouText } from "./modes";
 
 export type SongInfo = {
   title: string;
@@ -272,11 +272,11 @@ export async function myGames(userId: string) {
           .orderBy(asc(users.name)),
       ]);
       const next = nextPosition(round, answered(userId));
-      // Other players with songs left (by id: two players could share a name).
-      const waitingOn = players
+      // Other players and their songs left (by id: two players could share a name).
+      const others = players
         .filter((p) => p.userId !== userId)
-        .map((p) => ({ name: p.name, left: songsLeft(round, answered(p.userId)) }))
-        .filter((w) => w.left > 0);
+        .map((p) => ({ name: p.name, left: songsLeft(round, answered(p.userId)) }));
+      const waitingOn = others.filter((w) => w.left > 0);
       return {
         id: g.id,
         songCount: g.songCount,
@@ -285,7 +285,9 @@ export async function myGames(userId: string) {
         nextPosition: next,
         myTurn: next !== null,
         waitingOn,
-        others: players.filter((p) => p.userId !== userId).map((p) => p.name),
+        /** "Sarah and Topher are waiting on you." once everyone else is done; null otherwise. */
+        waitingOnYou: waitingOnYouText(others, songsLeft(round, answered(userId))),
+        others: others.map((o) => o.name),
       };
     }),
   );
