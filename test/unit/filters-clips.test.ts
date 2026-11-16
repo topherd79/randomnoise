@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clampStart, pickClipStart, surpriseStart } from "@/lib/clips";
-import { decadeOf, filterKey, matchesFilters, NO_FILTERS } from "@/lib/song-filters";
+import { decadeOf, filterKey, hasFilters, matchesFilters, NO_FILTERS } from "@/lib/song-filters";
 import { normalize } from "@/lib/normalize";
 
 describe("song filters", () => {
@@ -26,6 +26,16 @@ describe("song filters", () => {
   it("a song with no year or genre can't match those filters", () => {
     expect(matchesFilters({ ...song, year: null }, { ...NO_FILTERS, decades: [2000] })).toBe(false);
     expect(matchesFilters({ ...song, genre: null }, { ...NO_FILTERS, genres: ["alternative"] })).toBe(false);
+  });
+  it("a left-out genre is never drawn, and songs with no genre stay in", () => {
+    expect(matchesFilters(song, { ...NO_FILTERS, excludeGenres: ["alternative"] })).toBe(false);
+    expect(matchesFilters({ ...song, genre: " ALTERNATIVE " }, { ...NO_FILTERS, excludeGenres: ["alternative"] })).toBe(false);
+    expect(matchesFilters(song, { ...NO_FILTERS, excludeGenres: ["pop", "christmas"] })).toBe(true);
+    expect(matchesFilters({ ...song, genre: null }, { ...NO_FILTERS, excludeGenres: ["alternative"] })).toBe(true);
+    // Leaving a genre out works alongside the other filters.
+    expect(matchesFilters(song, { ...NO_FILTERS, decades: [2000], excludeGenres: ["pop"] })).toBe(true);
+    expect(hasFilters({ ...NO_FILTERS, excludeGenres: ["pop"] })).toBe(true);
+    expect(hasFilters(NO_FILTERS)).toBe(false);
   });
 });
 

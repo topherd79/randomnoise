@@ -101,6 +101,38 @@ describe("creating a game", () => {
     expect(artists.filter((a) => a === "The Killers")).toHaveLength(5);
   });
 
+  it("a left-out genre is never drawn and never a wrong answer; songs with no genre stay in", async () => {
+    const me = await addUser("Topher");
+    for (let i = 0; i < 8; i++) await addSong({ title: `Xmas ${i}`, artist: `Elf ${i}`, genre: "Christmas" });
+    for (let i = 0; i < 9; i++) await addSong({ title: `Pop ${i}`, artist: `Popper ${i}`, genre: "Pop" });
+    await addSong({ title: "Untagged", artist: "Nobody", genre: null });
+    const r = await createGame({
+      ...base,
+      playerIds: [me],
+      songCount: 10,
+      filters: { ...NO_FILTERS, excludeGenres: ["christmas"] },
+      createdBy: me,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const rounds = await roundsOf(r.gameId);
+    // 9 Pop songs plus the one with no genre: exactly 10, none of them Christmas.
+    expect(rounds.map((g) => g.song.genre).sort()).toEqual([...Array(9).fill("Pop"), null].sort());
+    for (const g of rounds) expect(g.choices.some((c) => c.title.startsWith("Xmas"))).toBe(false);
+
+    // Leaving out more than the catalog can spare says so: only the untagged song is left.
+    const tooFew = await createGame({
+      ...base,
+      playerIds: [me],
+      songCount: 5,
+      songPool: "mix",
+      filters: { ...NO_FILTERS, excludeGenres: ["christmas", "pop"] },
+      createdBy: me,
+    });
+    expect(tooFew).toMatchObject({ ok: false });
+    if (!tooFew.ok) expect(tooFew.error).toMatch(/only 1 switched-on songs that match these filters/);
+  });
+
   it("'new songs only' refuses when there aren't enough; 'include earlier' tops up", async () => {
     const me = await addUser("Topher");
     await addVariedSongs(7);

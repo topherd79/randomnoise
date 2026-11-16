@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { copyFile } from "node:fs/promises";
 import { after } from "next/server";
-import { and, between, count, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, between, count, eq, gt, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   answers,
@@ -52,6 +52,10 @@ function filterConditions(f: SongFilters) {
   const conds = [];
   if (f.decades.length) conds.push(inArray(sql`(${songs.year} / 10) * 10`, f.decades));
   if (f.genres.length) conds.push(inArray(filterKeySql(songs.genre), f.genres.map(filterKey)));
+  // Left-out genres: a song with no genre stays in (NOT IN alone would drop it, as null).
+  if (f.excludeGenres?.length) {
+    conds.push(or(isNull(songs.genre), notInArray(filterKeySql(songs.genre), f.excludeGenres.map(filterKey)))!);
+  }
   if (f.artists.length) conds.push(inArray(filterKeySql(songs.artist), f.artists.map(filterKey)));
   return conds;
 }

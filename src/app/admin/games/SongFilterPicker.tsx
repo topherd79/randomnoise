@@ -5,7 +5,9 @@ import { decadeOf, filterKey, type SongMeta } from "@/lib/song-filters";
 
 export type FilterState = {
   decades: Set<number>;
+  /** Genres in the game (green) and genres left out (red); a genre is in at most one. */
   genres: Set<string>;
+  excludeGenres: Set<string>;
   /** In the order they were added; key is filterKey(name). */
   artists: { key: string; name: string }[];
 };
@@ -41,9 +43,40 @@ function Chip({ checked, onChange, name, value, children }: { checked: boolean; 
   );
 }
 
+type GenreState = "off" | "in" | "out";
+const NEXT: Record<GenreState, GenreState> = { off: "in", in: "out", out: "off" };
+const SAYS: Record<GenreState, string> = { off: "not filtered", in: "included", out: "left out" };
+
 /**
- * Decade and genre checkboxes plus an artist type-ahead for the "Start a game"
- * form. Ticked options submit as decade / genre / artist form fields.
+ * A genre chip that cycles with each tap: off → included (green) → left out
+ * (red) → off. Submits as a genre or excludeGenre form field.
+ */
+function GenreChip({ label, state, value, onNext, children }: { label: string; state: GenreState; value: string; onNext: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onNext}
+      aria-label={`${label}: ${SAYS[state]}. Tap to ${state === "off" ? "include" : state === "in" ? "leave out" : "clear"}.`}
+      className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+        state === "in"
+          ? "border-accent bg-accent/10 text-ink"
+          : state === "out"
+            ? "border-danger bg-danger/10 text-danger"
+            : "border-line text-ink hover:border-muted"
+      }`}
+    >
+      {state === "in" && <input type="hidden" name="genre" value={value} />}
+      {state === "out" && <input type="hidden" name="excludeGenre" value={value} />}
+      {state === "out" && <span aria-hidden="true">− </span>}
+      <span className={state === "out" ? "line-through decoration-1" : ""}>{children}</span>
+    </button>
+  );
+}
+
+/**
+ * Decade checkboxes, genre chips (include or leave out) and an artist
+ * type-ahead for the "Start a game" form. Ticked options submit as decade /
+ * genre / excludeGenre / artist form fields.
  */
 export function SongFilterPicker({
   songs,
@@ -64,6 +97,16 @@ export function SongFilterPicker({
     [songs],
   );
   const artistOptions = useMemo(() => groupOptions(songs.map((s) => s.artist)).sort((a, b) => a.label.localeCompare(b.label)), [songs]);
+
+  const setGenre = (v: FilterState, key: string, to: GenreState): FilterState => {
+    const genres = new Set(v.genres);
+    const excludeGenres = new Set(v.excludeGenres);
+    genres.delete(key);
+    excludeGenres.delete(key);
+    if (to === "in") genres.add(key);
+    if (to === "out") excludeGenres.add(key);
+    return { ...v, genres, excludeGenres };
+  };
 
   const toggle = <K,>(set: Set<K>, key: K) => {
     const next = new Set(set);
@@ -95,19 +138,18 @@ export function SongFilterPicker({
 
       {genreOptions.length > 0 && (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Genres</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+            Genres <span className="font-normal normal-case tracking-normal">· tap to include, again to leave out, again to clear</span>
+          </p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {genreOptions.map((o) => (
-              <Chip
-                key={o.key}
-                name="genre"
-                value={o.key}
-                checked={value.genres.has(o.key)}
-                onChange={() => onChange({ ...value, genres: toggle(value.genres, o.key) })}
-              >
-                {o.label} <span className="font-normal text-muted">{o.count}</span>
-              </Chip>
-            ))}
+            {genreOptions.map((o) => {
+              const state: GenreState = value.genres.has(o.key) ? "in" : value.excludeGenres.has(o.key) ? "out" : "off";
+              return (
+                <GenreChip key={o.key} label={o.label} value={o.key} state={state} onNext={() => onChange(setGenre(value, o.key, NEXT[state]))}>
+                  {o.label} <span className={`font-normal ${state === "out" ? "text-danger/70" : "text-muted"}`}>{o.count}</span>
+                </GenreChip>
+              );
+            })}
           </div>
         </div>
       )}

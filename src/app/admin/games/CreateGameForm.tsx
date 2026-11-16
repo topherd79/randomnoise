@@ -34,7 +34,7 @@ function Option({ name, value, checked, disabled, onChange, children }: {
 
 type Pool = "new" | "mix";
 
-const NO_FILTER_STATE: FilterState = { decades: new Set(), genres: new Set(), artists: [] };
+const NO_FILTER_STATE: FilterState = { decades: new Set(), genres: new Set(), excludeGenres: new Set(), artists: [] };
 
 /** songs: every switched-on song's artist, year, genre and whether a game has used it (no titles). */
 export function CreateGameForm({ players, songs }: { players: Player[]; songs: SongMeta[] }) {
@@ -47,11 +47,16 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
 
   // Filters narrow which songs the game draws from; the counts below follow them live.
   const [filter, setFilter] = useState<FilterState>(NO_FILTER_STATE);
-  const filtering = filter.decades.size > 0 || filter.genres.size > 0 || filter.artists.length > 0;
+  const filtering = filter.decades.size > 0 || filter.genres.size > 0 || filter.excludeGenres.size > 0 || filter.artists.length > 0;
   const matching = useMemo(
     () =>
       songs.filter((s) =>
-        matchesFilters(s, { decades: [...filter.decades], genres: [...filter.genres], artists: filter.artists.map((a) => a.key) }),
+        matchesFilters(s, {
+          decades: [...filter.decades],
+          genres: [...filter.genres],
+          excludeGenres: [...filter.excludeGenres],
+          artists: filter.artists.map((a) => a.key),
+        }),
       ),
     [songs, filter],
   );
@@ -63,14 +68,13 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
     MODES[m].lengths.filter((n) => n <= (p === "mix" ? catalogSize : unplayed));
   const pickCount = (list: number[], m: GameMode = mode) =>
     list.includes(MODES[m].defaultLength) ? MODES[m].defaultLength : (list[list.length - 1] ?? MODES[m].lengths[0]);
-  // If there aren't enough new songs left, start on "include earlier songs" so you're never stuck.
-  const [autoMix] = useState(() => songs.filter((s) => !s.played).length < MODES.og.lengths[0]);
-  const [pool, setPool] = useState<Pool>(() => (autoMix ? "mix" : "new"));
+  // "Include songs from earlier games" is the default: new songs still come first.
+  const [pool, setPool] = useState<Pool>("mix");
   const fits = fitting(pool);
   const [chosenCount, setSongCount] = useState<number>(() => pickCount(fits));
   // When filters shrink the pool, fall back to the longest game that still fits.
   const songCount = fits.includes(chosenCount) ? chosenCount : pickCount(fits);
-  const [clipLength, setClipLength] = useState<number>(10);
+  const [clipLength, setClipLength] = useState<number>(20);
   const [wrong, setWrong] = useState<"random" | "similar">("random");
   const canCreate = fits.length > 0 && picked.size > 0;
   const repeats = Math.max(0, songCount - unplayed);
@@ -150,7 +154,7 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
         <p className={`mt-3 text-xs ${filtering ? "font-semibold text-ink" : "text-muted"}`}>
           {filtering
             ? `${catalogSize} ${catalogSize === 1 ? "song matches" : "songs match"} (${unplayed} new). Wrong answers come from these songs too when there are enough.`
-            : "Leave empty to use the whole catalog. Within a filter any ticked option counts; across filters a song must match all of them."}
+            : "Leave empty to use the whole catalog. Within a filter any ticked option counts; across filters a song must match all of them. A genre left out (red) is never drawn."}
         </p>
       </fieldset>
 
@@ -186,7 +190,6 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
             : repeats > 0
               ? `New songs first, then ${repeats} from earlier games (the ones played longest ago), mixed in at random. Players may remember those.`
               : "New songs first; songs from earlier games only fill in if there aren't enough new ones."}
-          {pool === "mix" && autoMix && " Picked for you: there aren't enough new songs left for a game."}
         </p>
       </fieldset>
 

@@ -27,6 +27,7 @@ const gameSchema = z
     filters: z.object({
       decades: z.array(z.number().int().min(1900).max(2100).multipleOf(10)).max(30),
       genres: z.array(z.string().trim().min(1).max(120)).max(100),
+      excludeGenres: z.array(z.string().trim().min(1).max(120)).max(100),
       artists: z.array(z.string().trim().min(1).max(300)).max(200),
     }),
   })
@@ -40,10 +41,11 @@ export async function createGameAction(_prev: FormResult, formData: FormData): P
     songCount: formData.get("songCount"),
     clipLengthSec: formData.get("clipLengthSec"),
     wrongAnswers: formData.get("wrongAnswers") ?? "random",
-    songPool: formData.get("songPool") ?? "new",
+    songPool: formData.get("songPool") ?? "mix",
     filters: {
       decades: [...new Set(formData.getAll("decade").map(Number))],
       genres: [...new Set(formData.getAll("genre").map(String))],
+      excludeGenres: [...new Set(formData.getAll("excludeGenre").map(String))],
       artists: [...new Set(formData.getAll("artist").map(String))],
     },
   });
