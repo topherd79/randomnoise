@@ -255,6 +255,31 @@ describe("The OG", () => {
   });
 });
 
+describe("waiting on you", () => {
+  it("tells the one player everyone's waiting on, on the home screen", async () => {
+    const mike = await addUser("Mike");
+    const sarah = await addUser("Sarah");
+    const dave = await addUser("Dave");
+    await addVariedSongs(10);
+    const r = await createGame({ ...base, mode: "three", playerIds: [mike, sarah, dave], songCount: 6, createdBy: mike });
+    if (!r.ok) throw new Error(r.error);
+
+    for (const p of [1, 2, 3]) await play(mike, r.gameId, p);
+    // Dave still has songs too, so nobody is singled out yet.
+    expect((await myGames(sarah))[0].waitingOnYou).toBeNull();
+    for (const p of [1, 2, 3]) await play(dave, r.gameId, p);
+    expect((await myGames(sarah))[0].waitingOnYou).toBe("Dave and Mike are waiting on your last 3 songs.");
+    await play(sarah, r.gameId, 1);
+    await play(sarah, r.gameId, 2);
+    expect((await myGames(sarah))[0].waitingOnYou).toBe("Dave and Mike are waiting on you.");
+    // The players who are done never see it.
+    expect((await myGames(mike))[0].waitingOnYou).toBeNull();
+    // Once Sarah finishes, the next round opens and it's everyone's turn again.
+    await play(sarah, r.gameId, 3);
+    expect((await myGames(sarah))[0].waitingOnYou).toBeNull();
+  });
+});
+
 describe("catalog download", () => {
   it("counts plays from finished and ended games only, never a game in progress", async () => {
     const mike = await addUser("Mike");

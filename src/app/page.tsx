@@ -55,7 +55,11 @@ export default async function Home() {
                 <h1 className="mt-2 text-3xl font-bold leading-tight">
                   {g.myTurn ? "Your turn." : `Waiting on ${waitingOnText(g.waitingOn, g.roundLength)}.`}
                 </h1>
-                {g.others.length > 0 && <p className="mt-2 text-muted">With {listNames(g.others)}</p>}
+                {g.waitingOnYou ? (
+                  <p className="mt-2 font-semibold text-accent">{g.waitingOnYou}</p>
+                ) : (
+                  g.others.length > 0 && <p className="mt-2 text-muted">With {listNames(g.others)}</p>
+                )}
                 <span
                   className={`mt-6 block rounded-full py-4 text-center text-lg font-semibold ${
                     g.myTurn ? "bg-accent text-accent-ink" : "bg-surface-2 text-ink"

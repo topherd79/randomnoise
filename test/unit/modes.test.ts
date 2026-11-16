@@ -9,6 +9,7 @@ import {
   songsLeft,
   waitingNote,
   waitingOnText,
+  waitingOnYouText,
 } from "@/lib/modes";
 
 describe("game modes", () => {
@@ -55,5 +56,20 @@ describe("game modes", () => {
     expect(waitingNote("og", { start: 10, end: 10 }, 10)).toMatch(/final results/);
     expect(waitingNote("three", { start: 4, end: 6 }, 9)).toMatch(/next songs open/);
     expect(waitingNote("all", { start: 1, end: 10 }, 10)).toMatch(/every song/);
+  });
+});
+
+describe("waiting on you", () => {
+  it("tells the last player who's waiting, once everyone else is done", () => {
+    expect(waitingOnYouText([{ name: "Sarah", left: 0 }], 1)).toBe("Sarah is waiting on you.");
+    expect(waitingOnYouText([{ name: "Sarah", left: 0 }, { name: "Topher", left: 0 }], 1)).toBe("Sarah and Topher are waiting on you.");
+    expect(waitingOnYouText([{ name: "Dave", left: 0 }, { name: "Jen", left: 0 }, { name: "Mike", left: 0 }], 4)).toBe(
+      "Dave, Jen and Mike are waiting on your last 4 songs.",
+    );
+  });
+  it("says nothing while someone else still has songs, when you're done, or when you play alone", () => {
+    expect(waitingOnYouText([{ name: "Sarah", left: 0 }, { name: "Dave", left: 1 }], 1)).toBeNull();
+    expect(waitingOnYouText([{ name: "Sarah", left: 0 }], 0)).toBeNull();
+    expect(waitingOnYouText([], 3)).toBeNull();
   });
 });

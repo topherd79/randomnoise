@@ -152,7 +152,7 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
           )}
         </legend>
         <div className="mt-2">
-          <SongFilterPicker songs={songs} value={filter} onChange={setFilter} />
+          <SongFilterPicker songs={songs} newOnly={pool === "new"} value={filter} onChange={setFilter} />
         </div>
         <p className={`mt-3 text-xs ${filtering || artistsPicked ? "font-semibold text-ink" : "text-muted"}`}>
           {filtering &&

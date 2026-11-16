@@ -15,7 +15,8 @@ unplayed songs (only songs switched on in the catalog); "Include songs from earl
 default, with 20-second clips) instead draws at random from every song, new or played (`songPool` in `createGame`).
 Optional decade and genre filters (`src/lib/song-filters.ts`) narrow the draw: any option within a filter, all
 filters together. A genre chip cycles off → included (green) → left out (red, `excludeGenres`: never drawn;
-songs with no genre stay in); wrong answers then come from the filtered set when it has enough songs. Picked
+songs with no genre stay in); wrong answers then come from the filtered set when it has enough songs. Each
+chip's count follows the other picks (`chipCounts`), and a chip that's off and would leave no songs is dimmed. Picked
 artists don't narrow anything: their songs come first, all picked artists alike and with no per-artist limit,
 and other songs fill the rest (`pickWithPreferred` in `src/lib/draw.ts`); a picked artist's song gets the
 picked artists' songs as wrong answers when there are enough. For each song, a player taps Play: a short clip and the answer clock start together, four
@@ -28,7 +29,8 @@ open from the start (5–25 songs). The next round opens only when everyone has 
 this one. Once you've answered a song you see everyone's picks for it so far; standings show each
 player's points for every song they've answered so far ("12 of 15 played"), and tapping a name in
 them shows that player's song-by-song history
-(only songs you've answered). The admin also plays, so admin screens never show the songs of a game
+(only songs you've answered). Once everyone else has played every open song, the one player left sees
+"Sarah and Topher are waiting on you" on the home card and game page (`waitingOnYouText` in `modes.ts`). The admin also plays, so admin screens never show the songs of a game
 in progress.
 
 ## Stack
