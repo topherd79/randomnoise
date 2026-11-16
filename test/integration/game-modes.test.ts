@@ -211,9 +211,9 @@ describe("All songs mode", () => {
     expect(mikeView.standings.find((s) => s.userId === sarah)).toMatchObject({ points: 0, played: 0 });
 
     const home = await myGames(sarah);
-    expect(home.active[0]).toMatchObject({ myTurn: true, nextPosition: 1, label: "All 5 songs", waitingOn: [] });
+    expect(home[0]).toMatchObject({ myTurn: true, nextPosition: 1, label: "All 5 songs", waitingOn: [] });
     const mikeHome = await myGames(mike);
-    expect(mikeHome.active[0]).toMatchObject({ myTurn: false, waitingOn: [{ name: "Sarah", left: 5 }] });
+    expect(mikeHome[0]).toMatchObject({ myTurn: false, waitingOn: [{ name: "Sarah", left: 5 }] });
 
     for (let p = 1; p <= 4; p++) await play(sarah, r.gameId, p);
     expect((await gameRow(r.gameId)).status).toBe("active");

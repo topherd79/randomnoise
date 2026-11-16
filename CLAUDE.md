@@ -103,6 +103,14 @@ in progress.
 - **Clips are temporary:** a clip file is deleted once everyone has answered its song
   (`completeSongIfDone`) or its game ends early (`cancelGame`); `scripts/cleanup-clips.mjs`
   sweeps leftovers on every start.
+- **Profiles** (`src/lib/profiles.ts`, numbers in `src/lib/profile-stats.ts`): `/profile` (your own, with
+  past games at `/profile/games`) and `/players/[id]` (a friend's short version, reached from a name in the
+  standings). Only games that are over count: finished games, plus the finished songs of games ended early
+  (which count toward the numbers but not as a game played or won). A game played alone is never a win.
+  Best and worst genre and decade go by average points a song, with at least 5 songs. Anyone you've played
+  a game with can open your profile (`maySeeProfile`); the admin can open anyone's.
+- **Admin games:** the Games page shows the 5 most recent games; `/admin/games/all` lists every game with
+  status, mode and player filters, 25 a page (`gameSummaries`, `countGames` in `src/lib/admin-games.ts`).
 - **Admin screens never show the songs of a game in progress** (the admin plays too): see
   `src/lib/admin-games.ts`. Clips have random file names, are only served to players in that game
   and never ahead of that player's next song (`mayPlayClip`); the full song unlocks only after a
@@ -126,7 +134,8 @@ npm run typecheck && npm run lint && npm test && npm run build
 - GitHub Actions (`.github/workflows/ci.yml`) runs all four on every pull request and push to `main`.
 - Pure logic lives in modules without server-only imports so it can be unit tested: `rules.ts`,
   `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`,
-  `modes.ts` (rounds per game mode), `genres.ts`, `csv.ts`.
+  `modes.ts` (rounds per game mode), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
+  worst genre and decade, placings).
 - **Artist limit:** a game has at most one song per artist for every five songs
   (`maxSongsPerArtist` in `src/lib/draw.ts`); it never blocks a game, it spreads artists as evenly
   as the catalog allows.

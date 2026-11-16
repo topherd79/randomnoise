@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { activeSongMeta } from "@/lib/catalog-queries";
-import { gameSummaries } from "@/lib/admin-games";
+import { countGames, gameSummaries } from "@/lib/admin-games";
 import { formatPoints } from "@/lib/rules";
 import { CreateGameForm } from "./CreateGameForm";
 import { ResultsGrid } from "./ResultsGrid";
@@ -12,12 +12,16 @@ import { loadGameResults } from "@/lib/game-view";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { listNames, MODES, waitingOnText } from "@/lib/modes";
 
+/** The Games page shows this many; the rest are on All games. */
+const RECENT = 5;
+
 export default async function GamesPage() {
   const me = await requireAdmin();
-  const [players, songMeta, summaries] = await Promise.all([
+  const [players, songMeta, summaries, counts] = await Promise.all([
     db.select({ id: users.id, name: users.name }).from(users).orderBy(asc(users.name)),
     activeSongMeta(),
-    gameSummaries(),
+    gameSummaries({ limit: RECENT }),
+    countGames(),
   ]);
   // Song-by-song results for games that are over (never for one in progress: the admin plays too).
   const results = await loadGameResults(summaries.filter((g) => g.status !== "active").map((g) => g.id));
@@ -30,12 +34,15 @@ export default async function GamesPage() {
           Progress only: this page never shows the songs of a game in progress, so you can play too.
         </p>
         <LiveRefresh gameIds={summaries.filter((g) => g.status === "active").map((g) => g.id)} />
+        {summaries.length > 0 && (
+          <h2 className="mt-8 text-sm font-semibold uppercase tracking-[0.18em] text-muted">Recent games</h2>
+        )}
         {summaries.length === 0 ? (
           <p className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-muted">
             No games yet. Start one on the right.
           </p>
         ) : (
-          <ul className="mt-6 divide-y divide-line overflow-hidden rounded-2xl border border-line">
+          <ul className="mt-3 divide-y divide-line overflow-hidden rounded-2xl border border-line">
             {summaries.map((g) => {
               const row = (
                 <>
@@ -90,6 +97,17 @@ export default async function GamesPage() {
               );
             })}
           </ul>
+        )}
+        {counts.all > 0 && (
+          <Link
+            href="/admin/games/all"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-5 py-2.5 text-sm font-semibold text-ink hover:bg-line"
+          >
+            See all {counts.all} {counts.all === 1 ? "game" : "games"}
+            <svg viewBox="0 0 16 16" className="size-3.5" aria-hidden="true">
+              <path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </Link>
         )}
       </section>
 
