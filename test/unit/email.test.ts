@@ -59,6 +59,33 @@ describe("gameOverEmail", () => {
     expect(text).toMatch(/Sarah <3: no answer/);
   });
 
+  it("lists each song's picks best score first, not alphabetically", () => {
+    const song = results.songs[0];
+    const pick = (userId: string, name: string, points: number | null, label: string | null) => ({
+      userId,
+      name,
+      label,
+      correct: label === null ? null : points !== null && points > 0,
+      points,
+      elapsedMs: label === null ? null : 4000,
+    });
+    const shuffled = {
+      ...results,
+      songs: [
+        {
+          ...song,
+          picks: [pick("a", "Ann", -300, "Wrong – One"), pick("n", "Nobody", null, null), pick("z", "Zed", 900, "Right – One"), pick("m", "Mike", 800, "Right – One")],
+        },
+      ],
+    };
+    const { text, html } = gameOverEmail("Mike", "m", "https://x/auth/t", shuffled);
+    const order = (s: string) => ["Zed", "Mike", "Ann", "Nobody"].map((n) => s.indexOf(n));
+    const inText = order(text.slice(text.indexOf("SONG BY SONG")));
+    expect(inText).toEqual([...inText].sort((x, y) => x - y));
+    const inHtml = order(html.slice(html.indexOf("Song by song")));
+    expect(inHtml).toEqual([...inHtml].sort((x, y) => x - y));
+  });
+
   it("escapes HTML in titles, names and picks", () => {
     const { html } = gameOverEmail("Mike", "u1", "https://x/auth/t", results);
     expect(html).not.toContain("<All Night>");
