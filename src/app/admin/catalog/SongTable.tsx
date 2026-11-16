@@ -42,6 +42,24 @@ export function Artwork({ url, size = 40 }: { url: string | null; size?: number 
   return <img src={url} alt="" width={size} height={size} loading="lazy" className="shrink-0 rounded-md bg-surface-2 object-cover" style={{ width: size, height: size }} />;
 }
 
+/** No genre, once the details lookup has had its go (a pending lookup may still fill it in). */
+const missingGenre = (r: SongRow) => !r.genre?.trim() && r.lookupStatus !== "pending";
+
+/**
+ * Orange flag next to a song with no genre: it can't be picked (or left out)
+ * by a genre filter, and doesn't count toward anyone's best and worst genre.
+ */
+function MissingGenre() {
+  return (
+    <span
+      className="shrink-0 rounded-full border border-orange-400/40 bg-orange-400/10 px-2 py-0.5 text-[11px] font-semibold text-orange-300"
+      title="No genre: a genre filter can't pick or leave out this song, and it doesn't count toward genre stats. Edit to add one."
+    >
+      Missing genre
+    </span>
+  );
+}
+
 function Status({ row }: { row: SongRow }) {
   const copies =
     row.copies > 1 ? (
@@ -69,6 +87,7 @@ type ArtistGroup = {
   songCount: number;
   offCount: number;
   reviewCount: number;
+  missingGenreCount: number;
 };
 
 const squash = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
@@ -122,6 +141,7 @@ export function groupByArtist(rows: SongRow[]): ArtistGroup[] {
       songCount: all.length,
       offCount: all.filter((s) => !s.active).length,
       reviewCount: all.filter((s) => s.needsReview).length,
+      missingGenreCount: all.filter(missingGenre).length,
     });
   }
   return groups.sort((a, b) => collator.compare(a.sortKey, b.sortKey));
@@ -215,7 +235,7 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
     for (const r of rows) {
       const key = genreTagOf(r);
       const spellings = names.get(key) ?? new Map<string, number>();
-      const label = r.genre?.trim() || "No genre";
+      const label = r.genre?.trim() || "Missing genre";
       spellings.set(label, (spellings.get(label) ?? 0) + 1);
       names.set(key, spellings);
     }
@@ -384,6 +404,11 @@ function ArtistItem({ group, open, onToggle }: { group: ArtistGroup; open: boole
           <span className="block truncate font-semibold text-ink">{group.name}</span>
           <span className="block truncate text-sm text-muted">{meta}</span>
         </span>
+        {group.missingGenreCount > 0 && (
+          <span className="text-xs font-semibold text-orange-300">
+            {group.missingGenreCount} missing a genre
+          </span>
+        )}
         {group.reviewCount > 0 && (
           <span className="text-xs font-semibold text-danger">{plural(group.reviewCount, "needs a look", "need a look")}</span>
         )}
@@ -409,9 +434,12 @@ function ArtistItem({ group, open, onToggle }: { group: ArtistGroup; open: boole
                   return (
                     <li key={r.id} className={`grid items-center gap-x-3 py-2 ${SONG_GRID}`}>
                       <ActiveSwitch id={r.id} active={r.active} title={r.title} />
-                      <Link href={`/admin/catalog/${r.id}`} className={`truncate font-medium text-ink hover:underline ${dim}`}>
-                        {r.title}
-                      </Link>
+                      <span className={`flex min-w-0 items-center gap-2 ${dim}`}>
+                        <Link href={`/admin/catalog/${r.id}`} className="truncate font-medium text-ink hover:underline">
+                          {r.title}
+                        </Link>
+                        {missingGenre(r) && <MissingGenre />}
+                      </span>
                       <span className={`hidden truncate text-muted md:block ${dim}`}>{r.genre ?? "—"}</span>
                       <span className={`tabular-nums text-muted ${dim}`}>{formatTime(r.durationSec)}</span>
                       <span className={`hidden truncate text-muted md:block ${dim}`}>
@@ -469,7 +497,10 @@ function RecentTable({ rows }: { rows: SongRow[] }) {
                   <Link href={`/admin/catalog/${r.id}`} className="flex items-center gap-3">
                     <Artwork url={r.artworkUrl} />
                     <span className="min-w-0">
-                      <span className="block truncate font-semibold text-ink">{r.title}</span>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-semibold text-ink">{r.title}</span>
+                        {missingGenre(r) && <MissingGenre />}
+                      </span>
                       <span className="block truncate text-muted">{r.artist}</span>
                     </span>
                   </Link>
