@@ -51,7 +51,7 @@ export async function addSong(input: SongInput): Promise<string> {
     artist: input.artist,
     album: input.album ?? null,
     year: input.year ?? 2000,
-    genre: input.genre ?? "Rock",
+    genre: input.genre === undefined ? "Rock" : input.genre,
     artworkUrl: null,
     appleMusicUrl: null,
     spotifyUrl: null,

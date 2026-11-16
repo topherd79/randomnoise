@@ -7,7 +7,7 @@ import { CLIP_LENGTHS } from "@/lib/clips";
 import { MAX_PLAYERS } from "@/lib/rules";
 import { GAME_MODES, MODES, type GameMode } from "@/lib/modes";
 import { createGameAction, type FormResult } from "./actions";
-import { matchesFilters, type SongMeta } from "@/lib/song-filters";
+import { isPreferred, matchesFilters, type SongMeta } from "@/lib/song-filters";
 import { SongFilterPicker, type FilterState } from "./SongFilterPicker";
 
 type Player = { id: string; name: string; isMe: boolean };
@@ -34,7 +34,7 @@ function Option({ name, value, checked, disabled, onChange, children }: {
 
 type Pool = "new" | "mix";
 
-const NO_FILTER_STATE: FilterState = { decades: new Set(), genres: new Set(), artists: [] };
+const NO_FILTER_STATE: FilterState = { decades: new Set(), genres: new Set(), excludeGenres: new Set(), artists: [] };
 
 /** songs: every switched-on song's artist, year, genre and whether a game has used it (no titles). */
 export function CreateGameForm({ players, songs }: { players: Player[]; songs: SongMeta[] }) {
@@ -47,33 +47,40 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
 
   // Filters narrow which songs the game draws from; the counts below follow them live.
   const [filter, setFilter] = useState<FilterState>(NO_FILTER_STATE);
-  const filtering = filter.decades.size > 0 || filter.genres.size > 0 || filter.artists.length > 0;
+  // Decades and genres narrow the draw; picked artists only come first.
+  const filtering = filter.decades.size > 0 || filter.genres.size > 0 || filter.excludeGenres.size > 0;
   const matching = useMemo(
     () =>
       songs.filter((s) =>
-        matchesFilters(s, { decades: [...filter.decades], genres: [...filter.genres], artists: filter.artists.map((a) => a.key) }),
+        matchesFilters(s, {
+          decades: [...filter.decades],
+          genres: [...filter.genres],
+          excludeGenres: [...filter.excludeGenres],
+          artists: [],
+        }),
       ),
     [songs, filter],
   );
   // catalogSize counts matching switched-on songs; unplayed is those no game has used.
   const catalogSize = matching.length;
   const unplayed = matching.filter((s) => !s.played).length;
+  // Songs by the picked artists among them (they come first, with no per-artist limit).
+  const artistsPicked = filter.artists.length;
+  const byPicked = matching.filter((s) => isPreferred(s, { artists: filter.artists.map((a) => a.key) }));
 
   const fitting = (p: Pool, m: GameMode = mode): number[] =>
     MODES[m].lengths.filter((n) => n <= (p === "mix" ? catalogSize : unplayed));
   const pickCount = (list: number[], m: GameMode = mode) =>
     list.includes(MODES[m].defaultLength) ? MODES[m].defaultLength : (list[list.length - 1] ?? MODES[m].lengths[0]);
-  // If there aren't enough new songs left, start on "include earlier songs" so you're never stuck.
-  const [autoMix] = useState(() => songs.filter((s) => !s.played).length < MODES.og.lengths[0]);
-  const [pool, setPool] = useState<Pool>(() => (autoMix ? "mix" : "new"));
+  // "Include songs from earlier games" is the default: new songs still come first.
+  const [pool, setPool] = useState<Pool>("mix");
   const fits = fitting(pool);
   const [chosenCount, setSongCount] = useState<number>(() => pickCount(fits));
   // When filters shrink the pool, fall back to the longest game that still fits.
   const songCount = fits.includes(chosenCount) ? chosenCount : pickCount(fits);
-  const [clipLength, setClipLength] = useState<number>(10);
+  const [clipLength, setClipLength] = useState<number>(20);
   const [wrong, setWrong] = useState<"random" | "similar">("random");
   const canCreate = fits.length > 0 && picked.size > 0;
-  const repeats = Math.max(0, songCount - unplayed);
 
   function choosePool(p: Pool) {
     setPool(p);
@@ -138,7 +145,7 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
       <fieldset>
         <legend className="flex w-full items-baseline justify-between text-sm font-semibold text-muted">
           <span>Filters (optional)</span>
-          {filtering && (
+          {(filtering || artistsPicked > 0) && (
             <button type="button" onClick={() => setFilter(NO_FILTER_STATE)} className="text-xs font-medium text-muted underline hover:text-ink">
               Clear
             </button>
@@ -147,10 +154,18 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
         <div className="mt-2">
           <SongFilterPicker songs={songs} value={filter} onChange={setFilter} />
         </div>
-        <p className={`mt-3 text-xs ${filtering ? "font-semibold text-ink" : "text-muted"}`}>
-          {filtering
-            ? `${catalogSize} ${catalogSize === 1 ? "song matches" : "songs match"} (${unplayed} new). Wrong answers come from these songs too when there are enough.`
-            : "Leave empty to use the whole catalog. Within a filter any ticked option counts; across filters a song must match all of them."}
+        <p className={`mt-3 text-xs ${filtering || artistsPicked ? "font-semibold text-ink" : "text-muted"}`}>
+          {filtering &&
+            `${catalogSize} ${catalogSize === 1 ? "song matches" : "songs match"} (${unplayed} new). Wrong answers come from these songs too when there are enough. `}
+          {artistsPicked > 0 &&
+            (() => {
+              const n = pool === "new" ? byPicked.filter((s) => !s.played).length : byPicked.length;
+              const who = artistsPicked === 1 ? "your artist" : "your artists";
+              return `By ${who}: ${n} ${pool === "new" ? "new " : ""}${n === 1 ? "song" : "songs"}${filtering ? " that match" : ""}. They come first, with no one-per-five limit; other songs fill the rest.`;
+            })()}
+          {!filtering &&
+            !artistsPicked &&
+            "Leave empty to use the whole catalog. Decades and genres narrow the draw: any ticked option within one, all of them together; a genre left out (red) is never drawn. Picked artists come first, with no one-per-five limit, and other songs fill the rest."}
         </p>
       </fieldset>
 
@@ -183,10 +198,9 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
         <p className="mt-2 text-xs text-muted">
           {pool === "new"
             ? "Only songs no game has used yet."
-            : repeats > 0
-              ? `New songs first, then ${repeats} from earlier games (the ones played longest ago), mixed in at random. Players may remember those.`
-              : "New songs first; songs from earlier games only fill in if there aren't enough new ones."}
-          {pool === "mix" && autoMix && " Picked for you: there aren't enough new songs left for a game."}
+            : `Drawn at random from all ${catalogSize} ${catalogSize === 1 ? "song" : "songs"}${filtering ? " that match" : ""}, new or played${
+                catalogSize > unplayed ? `, so songs from earlier games (${catalogSize - unplayed} of them) can come up` : ""
+              }.`}
         </p>
       </fieldset>
 

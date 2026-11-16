@@ -82,42 +82,117 @@ describe("creating a game", () => {
     }
   });
 
-  it("an artist filter still fills the game, spreading the artists evenly", async () => {
+  it("picked artists come first with no per-artist limit, and other songs fill the rest", async () => {
     const me = await addUser("Topher");
     for (let i = 0; i < 6; i++) await addSong({ title: `Q${i}`, artist: "Queen" });
-    for (let i = 0; i < 6; i++) await addSong({ title: `K${i}`, artist: "The Killers" });
-    await addVariedSongs(5);
+    for (let i = 0; i < 3; i++) await addSong({ title: `K${i}`, artist: "The Killers" });
+    await addVariedSongs(12);
     const r = await createGame({
       ...base,
       playerIds: [me],
       songCount: 10,
-      filters: { decades: [], genres: [], artists: ["queen", "the killers"] },
+      filters: { ...NO_FILTERS, artists: ["the killers", "queen"] },
+      createdBy: me,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const rounds = await roundsOf(r.gameId);
+    const artists = rounds.map((g) => g.song.artist);
+    // Every song they have (Queen well past the usual 2 in a 10-song game), plus one other.
+    expect(artists.filter((a) => a === "Queen")).toHaveLength(6);
+    expect(artists.filter((a) => a === "The Killers")).toHaveLength(3);
+    expect(artists.filter((a) => a !== "Queen" && a !== "The Killers")).toHaveLength(1);
+    // A picked artist's song gets the picked artists' songs as wrong answers; the fill-in doesn't get only those.
+    for (const g of rounds) {
+      const picks = g.choices.map((c) => c.artist);
+      if (g.song.artist === "Queen" || g.song.artist === "The Killers") {
+        expect(picks.every((a) => a === "Queen" || a === "The Killers")).toBe(true);
+      }
+    }
+    const fillIn = rounds.find((g) => g.song.artist !== "Queen" && g.song.artist !== "The Killers")!;
+    expect(fillIn.choices.filter((c) => c.artist === "Queen" || c.artist === "The Killers").length).toBeLessThan(3);
+  });
+
+  it("picked artists with plenty of songs fill the whole game, in any mix", async () => {
+    const me = await addUser("Topher");
+    for (let i = 0; i < 8; i++) await addSong({ title: `Q${i}`, artist: "Queen" });
+    for (let i = 0; i < 8; i++) await addSong({ title: `K${i}`, artist: "The Killers" });
+    await addVariedSongs(10);
+    const r = await createGame({
+      ...base,
+      playerIds: [me],
+      songCount: 10,
+      filters: { ...NO_FILTERS, artists: ["queen", "the killers"] },
       createdBy: me,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const artists = (await roundsOf(r.gameId)).map((g) => g.song.artist);
-    expect(artists.filter((a) => a === "Queen")).toHaveLength(5);
-    expect(artists.filter((a) => a === "The Killers")).toHaveLength(5);
+    expect(artists.every((a) => a === "Queen" || a === "The Killers")).toBe(true);
   });
 
-  it("'new songs only' refuses when there aren't enough; 'include earlier' tops up", async () => {
+  it("a left-out genre is never drawn and never a wrong answer; songs with no genre stay in", async () => {
     const me = await addUser("Topher");
-    await addVariedSongs(7);
+    for (let i = 0; i < 8; i++) await addSong({ title: `Xmas ${i}`, artist: `Elf ${i}`, genre: "Christmas" });
+    for (let i = 0; i < 9; i++) await addSong({ title: `Pop ${i}`, artist: `Popper ${i}`, genre: "Pop" });
+    await addSong({ title: "Untagged", artist: "Nobody", genre: null });
+    const r = await createGame({
+      ...base,
+      playerIds: [me],
+      songCount: 10,
+      filters: { ...NO_FILTERS, excludeGenres: ["christmas"] },
+      createdBy: me,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const rounds = await roundsOf(r.gameId);
+    // 9 Pop songs plus the one with no genre: exactly 10, none of them Christmas.
+    expect(rounds.map((g) => g.song.genre).sort()).toEqual([...Array(9).fill("Pop"), null].sort());
+    for (const g of rounds) expect(g.choices.some((c) => c.title.startsWith("Xmas"))).toBe(false);
+
+    // Leaving out more than the catalog can spare says so: only the untagged song is left.
+    const tooFew = await createGame({
+      ...base,
+      playerIds: [me],
+      songCount: 5,
+      songPool: "mix",
+      filters: { ...NO_FILTERS, excludeGenres: ["christmas", "pop"] },
+      createdBy: me,
+    });
+    expect(tooFew).toMatchObject({ ok: false });
+    if (!tooFew.ok) expect(tooFew.error).toMatch(/only 1 switched-on songs that match these filters/);
+  });
+
+  it("'new songs only' refuses when there aren't enough; 'include earlier' draws from every song at random", async () => {
+    const me = await addUser("Topher");
+    await addVariedSongs(10);
     const first = await createGame({ ...base, playerIds: [me], songCount: 5, createdBy: me });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
-
-    const strict = await createGame({ ...base, playerIds: [me], songCount: 5, createdBy: me });
-    expect(strict).toMatchObject({ ok: false });
-    if (!strict.ok) expect(strict.error).toMatch(/only 2 new songs/);
-
-    const mixed = await createGame({ ...base, playerIds: [me], songCount: 5, songPool: "mix", createdBy: me });
-    expect(mixed.ok).toBe(true);
-    if (!mixed.ok) return;
     const firstIds = new Set((await roundsOf(first.gameId)).map((g) => g.songId));
-    const reused = (await roundsOf(mixed.gameId)).filter((g) => firstIds.has(g.songId));
-    expect(reused).toHaveLength(3); // the 2 new songs, then 3 from the earlier game
+
+    const strict = await createGame({ ...base, playerIds: [me], songCount: 10, createdBy: me });
+    expect(strict).toMatchObject({ ok: false });
+    if (!strict.ok) expect(strict.error).toMatch(/only 5 new songs/);
+
+    // 5 new songs are still enough for a 5-song game, yet played songs come up too: the draw
+    // doesn't prefer new ones. (All 5 new by chance: 1 in 252 a try.)
+    let mixesInPlayed = false;
+    for (let attempt = 0; attempt < 8 && !mixesInPlayed; attempt++) {
+      const mixed = await createGame({ ...base, playerIds: [me], songCount: 5, songPool: "mix", createdBy: me });
+      expect(mixed.ok).toBe(true);
+      if (!mixed.ok) return;
+      const ids = (await roundsOf(mixed.gameId)).map((g) => g.songId);
+      expect(new Set(ids).size).toBe(5);
+      mixesInPlayed = ids.some((id) => firstIds.has(id));
+      // Ended before anyone played: its songs don't count as used.
+      await cancelGame(mixed.gameId);
+    }
+    expect(mixesInPlayed).toBe(true);
+
+    // And a game as long as the whole catalog uses every song.
+    const all = await createGame({ ...base, playerIds: [me], songCount: 10, songPool: "mix", createdBy: me });
+    expect(all.ok).toBe(true);
   });
 });
 
