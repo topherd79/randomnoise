@@ -6,7 +6,11 @@ import { ActiveSwitch } from "./ActiveSwitch";
 import { setSongsActive } from "./actions";
 
 const AUDIO_EXT = /\.(mp3|m4a|mp4|aac|wav|aif|aiff|flac|ogg|opus|m4p)$/i;
-const PARALLEL = 2;
+// One file at a time: on a slow connection two at once only makes each take
+// twice as long, and long uploads are the ones that get cut off.
+const PARALLEL = 1;
+/** Waits before each automatic retry of an upload whose connection dropped. */
+const RETRY_DELAYS_MS = [3_000, 10_000, 30_000];
 
 type Item = {
   key: string;
@@ -14,6 +18,8 @@ type Item = {
   status: "queued" | "uploading" | "done" | "failed";
   progress: number;
   message?: string;
+  /** Failed because the connection dropped (worth another try), not because of the file itself. */
+  retryable?: boolean;
   /** Set once the song is in the catalog, so it can be switched on or off right here. */
   song?: { id: string; title: string; active: boolean };
 };
@@ -21,8 +27,12 @@ type Item = {
 type UploadResponse = {
   ok: boolean;
   error?: string;
+  /** The connection dropped or the server was briefly unavailable: trying again may work. */
+  retryable?: boolean;
   song?: { id: string; title: string; artist: string; needsReview: boolean };
 };
+
+const DROPPED = "The connection dropped.";
 
 function upload(url: string, file: File, onProgress: (p: number) => void): Promise<UploadResponse> {
   return new Promise((resolve) => {
@@ -32,16 +42,26 @@ function upload(url: string, file: File, onProgress: (p: number) => void): Promi
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onload = () => {
+      // The server's own "interrupted" answer, a proxy giving up (499, 502–504), or a restart.
+      const flaky = xhr.status === 0 || xhr.status === 499 || xhr.status >= 500;
       try {
-        resolve(JSON.parse(xhr.responseText) as UploadResponse);
+        const r = JSON.parse(xhr.responseText) as UploadResponse;
+        resolve({ ...r, retryable: !r.ok && (flaky || r.error === "The upload was interrupted.") });
       } catch {
-        resolve({ ok: false, error: xhr.status === 413 ? "That file is too big." : `Upload failed (${xhr.status}).` });
+        resolve({
+          ok: false,
+          error: xhr.status === 413 ? "That file is too big." : `Upload failed (${xhr.status}).`,
+          retryable: flaky,
+        });
       }
     };
-    xhr.onerror = () => resolve({ ok: false, error: "The connection dropped. Try this file again." });
+    xhr.onerror = () => resolve({ ok: false, error: DROPPED, retryable: true });
+    xhr.onabort = () => resolve({ ok: false, error: DROPPED, retryable: true });
     xhr.send(file);
   });
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Read every file inside dropped folders (Safari, Chrome and Firefox all support this API). */
 async function filesFromDrop(dt: DataTransfer): Promise<File[]> {
@@ -86,20 +106,37 @@ export function Uploader() {
     setItems((all) => all.map((i) => (i.key === key ? { ...i, ...patch } : i)));
   }
 
+  /**
+   * Upload one file; if the connection drops, wait and try again (3 more times,
+   * waiting longer each time) before giving up on it.
+   */
+  async function uploadWithRetries(item: Item): Promise<UploadResponse> {
+    for (let attempt = 0; ; attempt++) {
+      update(item.key, { status: "uploading", progress: 0, message: attempt > 0 ? `Trying again (${attempt} of ${RETRY_DELAYS_MS.length})…` : undefined });
+      const r = await upload("/api/admin/songs", item.file, (p) => update(item.key, { progress: p }));
+      if (r.ok || !r.retryable || attempt >= RETRY_DELAYS_MS.length) return r;
+      const wait = RETRY_DELAYS_MS[attempt];
+      update(item.key, { message: `${DROPPED} Trying again in ${wait / 1000} seconds…` });
+      await sleep(wait);
+    }
+  }
+
   /** Start queued uploads while there's a free slot; refresh the list when the batch is done. */
   function pump() {
     while (running.current < PARALLEL && queue.current.length > 0) {
       const item = queue.current.shift()!;
       running.current++;
-      update(item.key, { status: "uploading" });
-      upload("/api/admin/songs", item.file, (p) => update(item.key, { progress: p })).then((r) => {
+      uploadWithRetries(item).then((r) => {
         running.current--;
         update(item.key, {
           status: r.ok ? "done" : "failed",
           progress: 1,
           message: r.ok
             ? `${r.song?.title} · ${r.song?.artist}${r.song?.needsReview ? " (check the details)" : ""}`
-            : r.error,
+            : r.retryable
+              ? `${DROPPED} Tried 4 times.`
+              : r.error,
+          retryable: !r.ok && r.retryable,
           // New songs start switched on, like everything in the catalog.
           song: r.ok && r.song ? { id: r.song.id, title: r.song.title, active: true } : undefined,
         });
@@ -132,6 +169,15 @@ export function Uploader() {
 
   const done = items.filter((i) => i.status === "done").length;
   const failed = items.filter((i) => i.status === "failed");
+  // Failures from dropped connections can be sent again in one go; ones about the file itself can't.
+  const retryable = failed.filter((i) => i.retryable);
+
+  function retryFailed() {
+    const again = retryable.map((i) => ({ ...i, status: "queued" as const, progress: 0, message: undefined, retryable: false }));
+    setItems((all) => all.map((i) => again.find((a) => a.key === i.key) ?? i));
+    queue.current.push(...again);
+    pump();
+  }
 
   // On/off for the songs added in this batch.
   const added = items.flatMap((i) => (i.song ? [i.song] : []));
@@ -220,16 +266,27 @@ export function Uploader() {
               {skipped > 0 && <span className="font-normal text-muted"> · {skipped} non-audio files skipped</span>}
             </p>
             {!active && (
-              <button
-                onClick={() => {
-                  setItems([]);
-                  setSkipped(0);
-                  setSwitchNote(null);
-                }}
-                className="text-muted hover:text-ink"
-              >
-                Clear
-              </button>
+              <span className="flex items-center gap-4">
+                {retryable.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={retryFailed}
+                    className="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-ink hover:brightness-95"
+                  >
+                    Retry {retryable.length} failed {retryable.length === 1 ? "upload" : "uploads"}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setItems([]);
+                    setSkipped(0);
+                    setSwitchNote(null);
+                  }}
+                  className="text-muted hover:text-ink"
+                >
+                  Clear
+                </button>
+              </span>
             )}
           </div>
           {added.length > 0 && (
