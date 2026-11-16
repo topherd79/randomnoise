@@ -7,7 +7,7 @@ import { CLIP_LENGTHS } from "@/lib/clips";
 import { MAX_PLAYERS } from "@/lib/rules";
 import { GAME_MODES, MODES, type GameMode } from "@/lib/modes";
 import { createGameAction, type FormResult } from "./actions";
-import { matchesFilters, type SongMeta } from "@/lib/song-filters";
+import { isPreferred, matchesFilters, type SongMeta } from "@/lib/song-filters";
 import { SongFilterPicker, type FilterState } from "./SongFilterPicker";
 
 type Player = { id: string; name: string; isMe: boolean };
@@ -47,7 +47,8 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
 
   // Filters narrow which songs the game draws from; the counts below follow them live.
   const [filter, setFilter] = useState<FilterState>(NO_FILTER_STATE);
-  const filtering = filter.decades.size > 0 || filter.genres.size > 0 || filter.excludeGenres.size > 0 || filter.artists.length > 0;
+  // Decades and genres narrow the draw; picked artists only come first.
+  const filtering = filter.decades.size > 0 || filter.genres.size > 0 || filter.excludeGenres.size > 0;
   const matching = useMemo(
     () =>
       songs.filter((s) =>
@@ -55,7 +56,7 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
           decades: [...filter.decades],
           genres: [...filter.genres],
           excludeGenres: [...filter.excludeGenres],
-          artists: filter.artists.map((a) => a.key),
+          artists: [],
         }),
       ),
     [songs, filter],
@@ -63,6 +64,9 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
   // catalogSize counts matching switched-on songs; unplayed is those no game has used.
   const catalogSize = matching.length;
   const unplayed = matching.filter((s) => !s.played).length;
+  // Songs by the picked artists among them (they come first, with no per-artist limit).
+  const artistsPicked = filter.artists.length;
+  const byPicked = matching.filter((s) => isPreferred(s, { artists: filter.artists.map((a) => a.key) }));
 
   const fitting = (p: Pool, m: GameMode = mode): number[] =>
     MODES[m].lengths.filter((n) => n <= (p === "mix" ? catalogSize : unplayed));
@@ -141,7 +145,7 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
       <fieldset>
         <legend className="flex w-full items-baseline justify-between text-sm font-semibold text-muted">
           <span>Filters (optional)</span>
-          {filtering && (
+          {(filtering || artistsPicked > 0) && (
             <button type="button" onClick={() => setFilter(NO_FILTER_STATE)} className="text-xs font-medium text-muted underline hover:text-ink">
               Clear
             </button>
@@ -150,10 +154,18 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
         <div className="mt-2">
           <SongFilterPicker songs={songs} value={filter} onChange={setFilter} />
         </div>
-        <p className={`mt-3 text-xs ${filtering ? "font-semibold text-ink" : "text-muted"}`}>
-          {filtering
-            ? `${catalogSize} ${catalogSize === 1 ? "song matches" : "songs match"} (${unplayed} new). Wrong answers come from these songs too when there are enough.`
-            : "Leave empty to use the whole catalog. Within a filter any ticked option counts; across filters a song must match all of them. A genre left out (red) is never drawn."}
+        <p className={`mt-3 text-xs ${filtering || artistsPicked ? "font-semibold text-ink" : "text-muted"}`}>
+          {filtering &&
+            `${catalogSize} ${catalogSize === 1 ? "song matches" : "songs match"} (${unplayed} new). Wrong answers come from these songs too when there are enough. `}
+          {artistsPicked > 0 &&
+            (() => {
+              const n = pool === "new" ? byPicked.filter((s) => !s.played).length : byPicked.length;
+              const who = artistsPicked === 1 ? "your artist" : "your artists";
+              return `By ${who}: ${n} ${pool === "new" ? "new " : ""}${n === 1 ? "song" : "songs"}${filtering ? " that match" : ""}. They come first, with no one-per-five limit; other songs fill the rest.`;
+            })()}
+          {!filtering &&
+            !artistsPicked &&
+            "Leave empty to use the whole catalog. Decades and genres narrow the draw: any ticked option within one, all of them together; a genre left out (red) is never drawn. Picked artists come first, with no one-per-five limit, and other songs fill the rest."}
         </p>
       </fieldset>
 

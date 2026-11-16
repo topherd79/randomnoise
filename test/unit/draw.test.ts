@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maxSongsPerArtist, pickSpreadOut, pickWrongAnswers, shuffle, type Candidate } from "@/lib/draw";
+import { maxSongsPerArtist, pickSpreadOut, pickWithPreferred, pickWrongAnswers, shuffle, type Candidate } from "@/lib/draw";
 
 const song = (id: string, artist: string, extra: Partial<Candidate> = {}): Candidate => ({
   id,
@@ -76,6 +76,53 @@ describe("pickSpreadOut", () => {
     const candidates = Array.from({ length: 30 }, (_, i) => song(String(i), `Artist ${i % 4}`));
     const picked = pickSpreadOut(candidates, 25, 5);
     expect(new Set(picked.map((s) => s.id)).size).toBe(picked.length);
+  });
+});
+
+describe("pickWithPreferred (picked artists come first)", () => {
+  const others = Array.from({ length: 20 }, (_, i) => song(`o${i}`, `Artist ${i % 10}`));
+
+  it("fills the whole game from the picked artists when they have enough, with no limit on them", () => {
+    const queen = Array.from({ length: 25 }, (_, i) => song(`q${i}`, "Queen"));
+    const picked = pickWithPreferred(shuffle([...others, ...queen], seeded(3)), ["queen"], 10, 2);
+    expect(countBy(picked)).toEqual({ Queen: 10 });
+  });
+
+  it("takes every song they have, then fills the rest keeping to the limit", () => {
+    const queen = Array.from({ length: 6 }, (_, i) => song(`q${i}`, "Queen"));
+    const picked = pickWithPreferred(shuffle([...others, ...queen], seeded(4)), ["Queen"], 10, 2);
+    expect(picked).toHaveLength(10);
+    expect(countBy(picked).Queen).toBe(6);
+    const fillIns = picked.filter((s) => s.artist !== "Queen");
+    expect(Math.max(...Object.values(countBy(fillIns)))).toBeLessThanOrEqual(2);
+  });
+
+  it("treats every picked artist alike, whatever order they were picked in", () => {
+    const queen = Array.from({ length: 6 }, (_, i) => song(`q${i}`, "Queen"));
+    const killers = Array.from({ length: 3 }, (_, i) => song(`k${i}`, "The Killers"));
+    const pool = shuffle([...others, ...queen, ...killers], seeded(5));
+    for (const order of [["queen", "the killers"], ["the killers", "queen"]]) {
+      const counts = countBy(pickWithPreferred(pool, order, 10, 2));
+      expect(counts.Queen).toBe(6);
+      expect(counts["The Killers"]).toBe(3);
+    }
+  });
+
+  it("mixes the picked artists at random, not evenly", () => {
+    const queen = Array.from({ length: 20 }, (_, i) => song(`q${i}`, "Queen"));
+    const killers = Array.from({ length: 20 }, (_, i) => song(`k${i}`, "The Killers"));
+    const splits = new Set<number>();
+    for (let seed = 1; seed <= 30; seed++) {
+      const picked = pickWithPreferred(shuffle([...queen, ...killers, ...others], seeded(seed)), ["queen", "the killers"], 10, 2);
+      expect(picked.every((s) => s.artist === "Queen" || s.artist === "The Killers")).toBe(true);
+      splits.add(countBy(picked).Queen ?? 0);
+    }
+    // Not always 5 and 5.
+    expect(splits.size).toBeGreaterThan(1);
+  });
+
+  it("with no artists picked it's the usual draw", () => {
+    expect(pickWithPreferred(others, [], 10, 2)).toEqual(pickSpreadOut(others, 10, 2));
   });
 });
 

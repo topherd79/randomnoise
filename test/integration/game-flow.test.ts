@@ -82,23 +82,53 @@ describe("creating a game", () => {
     }
   });
 
-  it("an artist filter still fills the game, spreading the artists evenly", async () => {
+  it("picked artists come first with no per-artist limit, and other songs fill the rest", async () => {
     const me = await addUser("Topher");
     for (let i = 0; i < 6; i++) await addSong({ title: `Q${i}`, artist: "Queen" });
-    for (let i = 0; i < 6; i++) await addSong({ title: `K${i}`, artist: "The Killers" });
-    await addVariedSongs(5);
+    for (let i = 0; i < 3; i++) await addSong({ title: `K${i}`, artist: "The Killers" });
+    await addVariedSongs(12);
     const r = await createGame({
       ...base,
       playerIds: [me],
       songCount: 10,
-      filters: { decades: [], genres: [], artists: ["queen", "the killers"] },
+      filters: { ...NO_FILTERS, artists: ["the killers", "queen"] },
+      createdBy: me,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const rounds = await roundsOf(r.gameId);
+    const artists = rounds.map((g) => g.song.artist);
+    // Every song they have (Queen well past the usual 2 in a 10-song game), plus one other.
+    expect(artists.filter((a) => a === "Queen")).toHaveLength(6);
+    expect(artists.filter((a) => a === "The Killers")).toHaveLength(3);
+    expect(artists.filter((a) => a !== "Queen" && a !== "The Killers")).toHaveLength(1);
+    // A picked artist's song gets the picked artists' songs as wrong answers; the fill-in doesn't get only those.
+    for (const g of rounds) {
+      const picks = g.choices.map((c) => c.artist);
+      if (g.song.artist === "Queen" || g.song.artist === "The Killers") {
+        expect(picks.every((a) => a === "Queen" || a === "The Killers")).toBe(true);
+      }
+    }
+    const fillIn = rounds.find((g) => g.song.artist !== "Queen" && g.song.artist !== "The Killers")!;
+    expect(fillIn.choices.filter((c) => c.artist === "Queen" || c.artist === "The Killers").length).toBeLessThan(3);
+  });
+
+  it("picked artists with plenty of songs fill the whole game, in any mix", async () => {
+    const me = await addUser("Topher");
+    for (let i = 0; i < 8; i++) await addSong({ title: `Q${i}`, artist: "Queen" });
+    for (let i = 0; i < 8; i++) await addSong({ title: `K${i}`, artist: "The Killers" });
+    await addVariedSongs(10);
+    const r = await createGame({
+      ...base,
+      playerIds: [me],
+      songCount: 10,
+      filters: { ...NO_FILTERS, artists: ["queen", "the killers"] },
       createdBy: me,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const artists = (await roundsOf(r.gameId)).map((g) => g.song.artist);
-    expect(artists.filter((a) => a === "Queen")).toHaveLength(5);
-    expect(artists.filter((a) => a === "The Killers")).toHaveLength(5);
+    expect(artists.every((a) => a === "Queen" || a === "The Killers")).toBe(true);
   });
 
   it("a left-out genre is never drawn and never a wrong answer; songs with no genre stay in", async () => {

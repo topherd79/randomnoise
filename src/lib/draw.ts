@@ -68,6 +68,25 @@ export function pickSpreadOut<T extends { id: string; artist: string }>(
   return picked;
 }
 
+/**
+ * The draw when the admin picked artists: every picked artist's songs come
+ * first, all equally (in the given random order, so an artist with more songs
+ * tends to get more), with no per-artist limit; other songs fill the rest,
+ * keeping to `maxPerArtist`. With no artists picked it's just pickSpreadOut.
+ */
+export function pickWithPreferred<T extends { id: string; artist: string }>(
+  candidates: T[],
+  preferredArtists: string[],
+  songCount: number,
+  maxPerArtist: number,
+): T[] {
+  const keys = new Set(preferredArtists.map(filterKey));
+  const isPicked = (c: T) => keys.has(filterKey(c.artist));
+  const first = candidates.filter(isPicked).slice(0, songCount);
+  const rest = pickSpreadOut(candidates.filter((c) => !isPicked(c)), songCount - first.length, maxPerArtist);
+  return [...first, ...rest];
+}
+
 // ---------------------------------------------------------------------------
 // Wrong answers
 // ---------------------------------------------------------------------------

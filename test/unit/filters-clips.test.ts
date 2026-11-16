@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clampStart, pickClipStart, surpriseStart } from "@/lib/clips";
-import { decadeOf, filterKey, hasFilters, matchesFilters, NO_FILTERS } from "@/lib/song-filters";
+import { decadeOf, filterKey, hasFilters, isPreferred, matchesFilters, NO_FILTERS } from "@/lib/song-filters";
 import { normalize } from "@/lib/normalize";
 
 describe("song filters", () => {
@@ -17,7 +17,14 @@ describe("song filters", () => {
   });
   it("any option within a filter counts", () => {
     expect(matchesFilters(song, { ...NO_FILTERS, decades: [1990, 2000] })).toBe(true);
-    expect(matchesFilters(song, { ...NO_FILTERS, artists: ["queen", "the killers"] })).toBe(true);
+    expect(matchesFilters(song, { ...NO_FILTERS, genres: ["rock", "alternative"] })).toBe(true);
+  });
+  it("picked artists don't narrow the draw; they only come first", () => {
+    expect(matchesFilters(song, { ...NO_FILTERS, artists: ["queen"] })).toBe(true);
+    expect(hasFilters({ ...NO_FILTERS, artists: ["queen"] })).toBe(false);
+    expect(isPreferred(song, { artists: ["queen", "THE  killers"] })).toBe(true);
+    expect(isPreferred(song, { artists: ["queen"] })).toBe(false);
+    expect(isPreferred(song, { artists: [] })).toBe(false);
   });
   it("every filter must match", () => {
     expect(matchesFilters(song, { decades: [2000], genres: ["alternative"], artists: [] })).toBe(true);

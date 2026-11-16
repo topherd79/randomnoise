@@ -12,10 +12,13 @@ https://claude.ai/artifact/H477Nc2h2RAwzVDDH8VHva — read it before changing ga
 
 The admin uploads songs (full mp3s) into a running catalog. A game draws its songs at random from
 unplayed songs (only songs switched on in the catalog); "Include songs from earlier games" (the form's
-default, with 20-second clips) instead draws at random from every song, new or played (`songPool` in `createGame`). Optional
-filters (decades, genres, artists; `src/lib/song-filters.ts`) narrow the draw: any option within a filter, all
+default, with 20-second clips) instead draws at random from every song, new or played (`songPool` in `createGame`).
+Optional decade and genre filters (`src/lib/song-filters.ts`) narrow the draw: any option within a filter, all
 filters together. A genre chip cycles off → included (green) → left out (red, `excludeGenres`: never drawn;
-songs with no genre stay in); wrong answers then come from the filtered set when it has enough songs. For each song, a player taps Play: a short clip and the answer clock start together, four
+songs with no genre stay in); wrong answers then come from the filtered set when it has enough songs. Picked
+artists don't narrow anything: their songs come first, all picked artists alike and with no per-artist limit,
+and other songs fill the rest (`pickWithPreferred` in `src/lib/draw.ts`); a picked artist's song gets the
+picked artists' songs as wrong answers when there are enough. For each song, a player taps Play: a short clip and the answer clock start together, four
 "Title – Artist" choices (1 right, 3 random other catalog songs) reveal letter by letter and finish
 together, and a faster correct answer scores more (1,000 sliding to 100; a wrong answer loses a third
 of what a right one would have earned, so guessing is worth zero on average). Players
@@ -138,5 +141,5 @@ npm run typecheck && npm run lint && npm test && npm run build
   `modes.ts` (rounds per game mode), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
   worst genre and decade, placings).
 - **Artist limit:** a game has at most one song per artist for every five songs
-  (`maxSongsPerArtist` in `src/lib/draw.ts`); it never blocks a game, it spreads artists as evenly
-  as the catalog allows.
+  (`maxSongsPerArtist` in `src/lib/draw.ts`), except artists picked on the form; it never blocks a
+  game, it spreads artists as evenly as the catalog allows.

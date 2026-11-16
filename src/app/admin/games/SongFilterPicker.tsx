@@ -75,7 +75,7 @@ function GenreChip({ label, state, value, onNext, children }: { label: string; s
 
 /**
  * Decade checkboxes, genre chips (include or leave out) and an artist
- * type-ahead for the "Start a game" form. Ticked options submit as decade /
+ * type-ahead (their songs come first) for the "Start a game" form. Ticked options submit as decade /
  * genre / excludeGenre / artist form fields.
  */
 export function SongFilterPicker({
@@ -155,7 +155,9 @@ export function SongFilterPicker({
       )}
 
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Artists</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+          Artists <span className="font-normal normal-case tracking-normal">· their songs come first</span>
+        </p>
         <ArtistPicker
           options={artistOptions}
           selected={value.artists}
@@ -225,7 +227,7 @@ function ArtistPicker({
   return (
     <div className="mt-1.5">
       {selected.length > 0 && (
-        <ul className="mb-2 flex flex-wrap gap-1.5" aria-label="Artists in the filter">
+        <ul className="mb-2 flex flex-wrap gap-1.5" aria-label="Artists whose songs come first">
           {selected.map((a) => (
             <li key={a.key} className="flex items-center gap-1 rounded-lg border border-accent bg-accent/10 py-1 pl-2.5 pr-1 text-xs font-semibold text-ink">
               <input type="hidden" name="artist" value={a.key} />
