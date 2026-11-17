@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { ClientErrorReporter } from "@/components/ClientErrorReporter";
 
 export const metadata: Metadata = {
   title: "Random Noise",
@@ -17,7 +18,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en">
-      <body className="min-h-dvh">{children}</body>
+      <body className="min-h-dvh">
+        <ClientErrorReporter />
+        {children}
+      </body>
     </html>
   );
 }

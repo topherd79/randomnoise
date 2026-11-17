@@ -130,7 +130,12 @@ in progress.
 - **Older iPhones:** `browserslist` in `package.json` adds Safari/iOS 15.4, so the build rewrites newer
   syntax for them. Next 16 targets Safari 16.4+ by default, and its class static blocks stopped all
   JavaScript (so Play did nothing) on an iPhone on iOS 16.2. Every iPhone browser, Chrome included, runs
-  the iOS version's Safari engine.
+  the iOS version's Safari engine. On iOS 16.2 an answer was then saved but its reply never handled, so
+  `PlayRound` waits 6 s for the answer's reply (`withTimeout`, `src/lib/timeout.ts`) and reloads the
+  page if it doesn't come; a backup reload also follows the result if `router.refresh()` didn't move on.
+- **Browser errors reach the server log:** `<ClientErrorReporter>` (root layout) and `reportClientError()`
+  send script errors from logged-in players to `/api/client-error`, which writes a `[client-error]` line
+  (player, page, message, browser, stack) to Railway's deploy logs. Capped per player per hour.
 - Phone screens: max width `max-w-md`, respect safe areas, inputs at 16px+ so iOS doesn't zoom.
   Admin screens are laid out for a desktop browser.
 
