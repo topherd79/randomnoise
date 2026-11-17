@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { needsPlainReload } from "@/lib/older-browser";
 
 const FALLBACK_POLL_MS = 20_000;
 /** The server sends a heartbeat every 25 s; this long without one means the feed is stuck. */
@@ -32,7 +33,9 @@ export function LiveRefresh({ gameIds }: { gameIds: string[] }) {
         return;
       }
       waitingForMusic = false;
-      router.refresh();
+      // Older iPhones froze in the router's refresh, so they reload the page instead.
+      if (needsPlainReload()) window.location.reload();
+      else router.refresh();
     };
     const refresh = () => {
       // Several signals often arrive together (an answer, then the round finishing).
