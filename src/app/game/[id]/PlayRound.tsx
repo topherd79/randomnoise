@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 import { CUTOFF_MS, GUESS_PENALTY, REVEAL_MS, formatPoints, pointsAt, revealedChars } from "@/lib/rules";
 import type { AnswerResult } from "@/lib/games";
 import { answerSongAction, startSongAction } from "../actions";
+import { withTimeout } from "@/lib/timeout";
+import { reportClientError } from "@/lib/client-errors";
+
+/**
+ * How long to wait for the answer's reply before reloading the page. Older
+ * iPhones (iOS 16.2) save the answer but then fail to read the reply, so the
+ * screen would sit on "sending" for good; a reload shows how it went.
+ */
+const ANSWER_REPLY_MS = 6000;
+/** After the result shows, the page moves on with router.refresh(); if that hasn't happened by now, reload. */
+const MOVE_ON_MS = 6000;
 
 type Props = {
   gameSongId: string;
@@ -37,6 +48,9 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
   const [result, setResult] = useState<AnswerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const clockStarted = useRef(Boolean(startedAt));
+  const reloadTimer = useRef<number | undefined>(undefined);
+  // Once this song's screen goes away (the refresh worked), the backup reload isn't needed.
+  useEffect(() => () => window.clearTimeout(reloadTimer.current), []);
 
   // Tick the clock while choices are revealing (and a little after, for the points display).
   useEffect(() => {
@@ -81,17 +95,30 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
     setPhase("playing");
     // Earlier results may sit above this song: bring the choices into view.
     section.current?.scrollIntoView({ block: "start", behavior: "smooth" });
-    startSongAction(gameSongId).then((r) => {
-      if (r.ok) setClockStart(r.startedAt - offset);
-      else setError(r.error);
-    });
+    startSongAction(gameSongId).then(
+      (r) => {
+        if (r.ok) setClockStart(r.startedAt - offset);
+        else setError(r.error);
+      },
+      // The clip is playing and the server keeps its own clock; just make the failure visible in the logs.
+      (err: unknown) => reportClientError("startSong", err),
+    );
   }
 
   async function onPick(songId: string) {
     if (phase !== "playing") return;
     setPicked(songId);
     setPhase("sending");
-    const r = await answerSongAction(gameSongId, songId);
+    let r: Awaited<ReturnType<typeof answerSongAction>>;
+    try {
+      r = await withTimeout(answerSongAction(gameSongId, songId), ANSWER_REPLY_MS);
+    } catch (err) {
+      // Most likely the answer arrived and only the reply went wrong: reloading
+      // shows how it went (or, if it didn't arrive, lets them pick again).
+      reportClientError("answerSong", err);
+      window.location.reload();
+      return;
+    }
     if (!r.ok) {
       setError(r.error);
       setPicked(null);
@@ -103,6 +130,7 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
     setPhase("done");
     // Show the full "you answered" page (song, full track, links, who's left).
     setTimeout(() => router.refresh(), 1600);
+    reloadTimer.current = window.setTimeout(() => window.location.reload(), 1600 + MOVE_ON_MS);
   }
 
   const started = phase === "playing" || phase === "sending" || phase === "done";
