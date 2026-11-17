@@ -7,6 +7,7 @@ import type { AnswerResult } from "@/lib/games";
 import { answerSongAction, startSongAction } from "../actions";
 import { withTimeout } from "@/lib/timeout";
 import { reportClientError } from "@/lib/client-errors";
+import { needsPlainReload } from "@/lib/older-browser";
 
 /**
  * How long to wait for the answer's reply before reloading the page. Older
@@ -123,6 +124,11 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
       setError(r.error);
       setPicked(null);
       setPhase("playing");
+      return;
+    }
+    // Older iPhones froze in the router's refresh: reload instead (the page shows how it went).
+    if (needsPlainReload()) {
+      window.location.reload();
       return;
     }
     audio.current?.pause();
