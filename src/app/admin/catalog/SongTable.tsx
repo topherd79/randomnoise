@@ -42,21 +42,34 @@ export function Artwork({ url, size = 40 }: { url: string | null; size?: number 
   return <img src={url} alt="" width={size} height={size} loading="lazy" className="shrink-0 rounded-md bg-surface-2 object-cover" style={{ width: size, height: size }} />;
 }
 
-/** No genre, once the details lookup has had its go (a pending lookup may still fill it in). */
+/** No genre or no year, once the details lookup has had its go (a pending lookup may still fill them in). */
 const missingGenre = (r: SongRow) => !r.genre?.trim() && r.lookupStatus !== "pending";
+const missingYear = (r: SongRow) => !r.year && r.lookupStatus !== "pending";
 
-/**
- * Orange flag next to a song with no genre: it can't be picked (or left out)
- * by a genre filter, and doesn't count toward anyone's best and worst genre.
- */
-function MissingGenre() {
+const MISSING_WHY = {
+  genre: "No genre: a genre filter can't pick or leave out this song, and it doesn't count toward genre stats. Edit to add one.",
+  year: "No year: a decade filter can't pick this song, and it doesn't count toward decade stats. Edit to add one.",
+} as const;
+
+/** Orange flag next to a song with no genre or no year (see MISSING_WHY). */
+function Missing({ what }: { what: keyof typeof MISSING_WHY }) {
   return (
     <span
       className="shrink-0 rounded-full border border-orange-400/40 bg-orange-400/10 px-2 py-0.5 text-[11px] font-semibold text-orange-300"
-      title="No genre: a genre filter can't pick or leave out this song, and it doesn't count toward genre stats. Edit to add one."
+      title={MISSING_WHY[what]}
     >
-      Missing genre
+      Missing {what}
     </span>
+  );
+}
+
+/** The flags a song needs, side by side. */
+function MissingFlags({ row }: { row: SongRow }) {
+  return (
+    <>
+      {missingGenre(row) && <Missing what="genre" />}
+      {missingYear(row) && <Missing what="year" />}
+    </>
   );
 }
 
@@ -88,6 +101,7 @@ type ArtistGroup = {
   offCount: number;
   reviewCount: number;
   missingGenreCount: number;
+  missingYearCount: number;
 };
 
 const squash = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
@@ -142,6 +156,7 @@ export function groupByArtist(rows: SongRow[]): ArtistGroup[] {
       offCount: all.filter((s) => !s.active).length,
       reviewCount: all.filter((s) => s.needsReview).length,
       missingGenreCount: all.filter(missingGenre).length,
+      missingYearCount: all.filter(missingYear).length,
     });
   }
   return groups.sort((a, b) => collator.compare(a.sortKey, b.sortKey));
@@ -228,7 +243,7 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
     const all = [...new Set(rows.map(decadeTagOf))].sort((a, b) => (a === "none" ? 1 : b === "none" ? -1 : a - b));
     const counts = new Map<DecadeTag, number>();
     for (const r of base) if (genreOk(r)) counts.set(decadeTagOf(r), (counts.get(decadeTagOf(r)) ?? 0) + 1);
-    return all.map((key) => ({ key, label: key === "none" ? "No year" : `${key}s`, count: counts.get(key) ?? 0 }));
+    return all.map((key) => ({ key, label: key === "none" ? "Missing year" : `${key}s`, count: counts.get(key) ?? 0 }));
   })();
   const genreTags = (() => {
     const names = new Map<string, Map<string, number>>();
@@ -369,8 +384,9 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
   );
 }
 
-/** Switch · title · genre · length · clip · status + Edit (genre and clip hide on narrow screens). */
-const SONG_GRID = "grid-cols-[2.5rem_minmax(0,1fr)_3.5rem_auto] md:grid-cols-[2.5rem_minmax(0,1fr)_9rem_3.5rem_10rem_12rem]";
+/** Switch · title · genre · year · length · clip · status + Edit (genre, year and clip hide on narrow screens). */
+const SONG_GRID =
+  "grid-cols-[2.5rem_minmax(0,1fr)_3.5rem_auto] md:grid-cols-[2.5rem_minmax(0,1fr)_9rem_3rem_3.5rem_10rem_12rem]";
 
 function ArtistItem({ group, open, onToggle }: { group: ArtistGroup; open: boolean; onToggle: () => void }) {
   const named = group.albums.filter((a) => a.name).length;
@@ -404,9 +420,14 @@ function ArtistItem({ group, open, onToggle }: { group: ArtistGroup; open: boole
           <span className="block truncate font-semibold text-ink">{group.name}</span>
           <span className="block truncate text-sm text-muted">{meta}</span>
         </span>
-        {group.missingGenreCount > 0 && (
-          <span className="text-xs font-semibold text-orange-300">
-            {group.missingGenreCount} missing a genre
+        {(group.missingGenreCount > 0 || group.missingYearCount > 0) && (
+          <span className="text-right text-xs font-semibold text-orange-300">
+            {[
+              group.missingGenreCount > 0 && `${group.missingGenreCount} missing a genre`,
+              group.missingYearCount > 0 && `${group.missingYearCount} missing a year`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
         )}
         {group.reviewCount > 0 && (
@@ -434,13 +455,15 @@ function ArtistItem({ group, open, onToggle }: { group: ArtistGroup; open: boole
                   return (
                     <li key={r.id} className={`grid items-center gap-x-3 py-2 ${SONG_GRID}`}>
                       <ActiveSwitch id={r.id} active={r.active} title={r.title} />
-                      <span className={`flex min-w-0 items-center gap-2 ${dim}`}>
-                        <Link href={`/admin/catalog/${r.id}`} className="truncate font-medium text-ink hover:underline">
+                      {/* The flags wrap under the title rather than squeezing it. */}
+                      <span className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${dim}`}>
+                        <Link href={`/admin/catalog/${r.id}`} className="max-w-full truncate font-medium text-ink hover:underline">
                           {r.title}
                         </Link>
-                        {missingGenre(r) && <MissingGenre />}
+                        <MissingFlags row={r} />
                       </span>
                       <span className={`hidden truncate text-muted md:block ${dim}`}>{r.genre ?? "—"}</span>
+                      <span className={`hidden tabular-nums text-muted md:block ${dim}`}>{r.year ?? "—"}</span>
                       <span className={`tabular-nums text-muted ${dim}`}>{formatTime(r.durationSec)}</span>
                       <span className={`hidden truncate text-muted md:block ${dim}`}>
                         {r.clip}
@@ -497,9 +520,9 @@ function RecentTable({ rows }: { rows: SongRow[] }) {
                   <Link href={`/admin/catalog/${r.id}`} className="flex items-center gap-3">
                     <Artwork url={r.artworkUrl} />
                     <span className="min-w-0">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-semibold text-ink">{r.title}</span>
-                        {missingGenre(r) && <MissingGenre />}
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="max-w-full truncate font-semibold text-ink">{r.title}</span>
+                        <MissingFlags row={r} />
                       </span>
                       <span className="block truncate text-muted">{r.artist}</span>
                     </span>
