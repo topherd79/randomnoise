@@ -2,6 +2,7 @@
 
 import { useId, useMemo, useRef, useState } from "react";
 import { chipCounts, decadeOf, filterKey, type SongMeta } from "@/lib/song-filters";
+import { genreList } from "@/lib/genres";
 
 export type FilterState = {
   decades: Set<number>;
@@ -136,7 +137,8 @@ export function SongFilterPicker({
     return [...counts.entries()].sort((a, b) => a[0] - b[0]).map(([key, count]) => ({ key, label: `${key}s`, count }));
   }, [songs]);
   const genreOptions = useMemo(
-    () => groupOptions(songs.flatMap((s) => (s.genre ? [s.genre] : []))).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+    // One chip per genre: a Pop/Rock song counts under Pop and under Rock.
+    () => groupOptions(songs.flatMap((s) => genreList(s.genre))).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
     [songs],
   );
   const artistOptions = useMemo(() => groupOptions(songs.map((s) => s.artist)).sort((a, b) => a.label.localeCompare(b.label)), [songs]);

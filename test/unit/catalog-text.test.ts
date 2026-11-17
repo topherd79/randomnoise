@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanTitle, songKey } from "@/lib/normalize";
-import { canonicalGenre } from "@/lib/genres";
+import { canonicalGenres } from "@/lib/genres";
 import { choiceLabel } from "@/lib/rules";
 import { lookupSong } from "@/lib/lookup";
 
@@ -47,19 +47,19 @@ describe("songKey (copies count as one song)", () => {
   });
 });
 
-describe("canonicalGenre", () => {
+describe("canonicalGenres", () => {
   it("folds French and variant genre names into one English name", () => {
-    expect(canonicalGenre("Alternatif et Indé")).toBe("Alternative");
-    expect(canonicalGenre("Alternative & Indie")).toBe("Alternative");
-    expect(canonicalGenre("Électronique")).toBe("Electronic");
-    expect(canonicalGenre(" Variété internationale ")).toBe("Pop");
+    expect(canonicalGenres("Alternatif et Indé")).toBe("Alternative");
+    expect(canonicalGenres("Alternative & Indie")).toBe("Alternative");
+    expect(canonicalGenres("Électronique")).toBe("Electronic");
+    expect(canonicalGenres(" Variété internationale ")).toBe("Pop");
   });
 
-  it("keeps other genres as they are", () => {
-    expect(canonicalGenre("Pop/Rock")).toBe("Pop/Rock");
-    expect(canonicalGenre("Trip Hop")).toBe("Trip Hop");
-    expect(canonicalGenre("")).toBeNull();
-    expect(canonicalGenre(null)).toBeNull();
+  it("keeps other genres as they are, one line for several", () => {
+    expect(canonicalGenres("Pop/Rock")).toBe("Pop, Rock");
+    expect(canonicalGenres("Trip Hop")).toBe("Trip Hop");
+    expect(canonicalGenres("")).toBeNull();
+    expect(canonicalGenres(null)).toBeNull();
   });
 });
 

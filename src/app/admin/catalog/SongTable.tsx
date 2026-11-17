@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { formatTime } from "@/lib/clips";
 import type { LookupStatus } from "@/db/schema";
 import { decadeOf, filterKey } from "@/lib/song-filters";
+import { genreList } from "@/lib/genres";
 import { ActiveSwitch } from "./ActiveSwitch";
 
 export type SongRow = {
@@ -177,9 +178,14 @@ const segment = (selected: boolean) =>
   }`;
 
 // Decade and genre tags. "none" / "" stand for songs with no year / no genre.
+// A song with several genres ("Pop, Rock") is under each of their tags.
 type DecadeTag = number | "none";
 const decadeTagOf = (r: SongRow): DecadeTag => (r.year === null ? "none" : decadeOf(r.year));
-const genreTagOf = (r: SongRow): string => (r.genre ? filterKey(r.genre) : "");
+const genreNamesOf = (r: SongRow): string[] => genreList(r.genre);
+const genreTagsOf = (r: SongRow): string[] => {
+  const keys = genreNamesOf(r).map(filterKey);
+  return keys.length ? keys : [""];
+};
 
 function toggled<K>(set: Set<K>, key: K): Set<K> {
   const next = new Set(set);
@@ -232,7 +238,7 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
     [rows, q, show],
   );
   const decadeOk = (r: SongRow) => decades.size === 0 || decades.has(decadeTagOf(r));
-  const genreOk = (r: SongRow) => genres.size === 0 || genres.has(genreTagOf(r));
+  const genreOk = (r: SongRow) => genres.size === 0 || genreTagsOf(r).some((k) => genres.has(k));
   const shown = base.filter((r) => decadeOk(r) && genreOk(r));
   const groups = groupByArtist(shown);
 
@@ -248,14 +254,16 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
   const genreTags = (() => {
     const names = new Map<string, Map<string, number>>();
     for (const r of rows) {
-      const key = genreTagOf(r);
-      const spellings = names.get(key) ?? new Map<string, number>();
-      const label = r.genre?.trim() || "Missing genre";
-      spellings.set(label, (spellings.get(label) ?? 0) + 1);
-      names.set(key, spellings);
+      const list = genreNamesOf(r);
+      for (const label of list.length ? list : ["Missing genre"]) {
+        const key = list.length ? filterKey(label) : "";
+        const spellings = names.get(key) ?? new Map<string, number>();
+        spellings.set(label, (spellings.get(label) ?? 0) + 1);
+        names.set(key, spellings);
+      }
     }
     const counts = new Map<string, number>();
-    for (const r of base) if (decadeOk(r)) counts.set(genreTagOf(r), (counts.get(genreTagOf(r)) ?? 0) + 1);
+    for (const r of base) if (decadeOk(r)) for (const k of genreTagsOf(r)) counts.set(k, (counts.get(k) ?? 0) + 1);
     return [...names.entries()]
       .map(([key, spellings]) => ({
         key,

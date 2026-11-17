@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { copyFile } from "node:fs/promises";
 import { after } from "next/server";
-import { and, between, count, eq, gt, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, between, count, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   answers,
@@ -19,7 +19,7 @@ import {
 } from "@/db/schema";
 import { cutClip, probe } from "./audio";
 import { publishGameUpdate } from "./live";
-import { filterKey, hasFilters, isPreferred, matchesFilters, NO_FILTERS, type SongFilters } from "./song-filters";
+import { hasFilters, isPreferred, matchesFilters, NO_FILTERS, type SongFilters } from "./song-filters";
 import { createLoginUrl } from "./auth";
 import { usedSongs } from "./catalog-queries";
 import { songKey } from "./normalize";
@@ -43,22 +43,6 @@ type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
  */
 export type SongPool = "new" | "mix";
 
-/** Same normalization as filterKey() in song-filters.ts, in SQL. */
-const filterKeySql = (col: typeof songs.genre) =>
-  sql`lower(regexp_replace(trim(${col}), '\\s+', ' ', 'g'))`;
-
-/** SQL conditions for the game form's decade and genre filters (any option within a filter, every filter). */
-function filterConditions(f: SongFilters) {
-  const conds = [];
-  if (f.decades.length) conds.push(inArray(sql`(${songs.year} / 10) * 10`, f.decades));
-  if (f.genres.length) conds.push(inArray(filterKeySql(songs.genre), f.genres.map(filterKey)));
-  // Left-out genres: a song with no genre stays in (NOT IN alone would drop it, as null).
-  if (f.excludeGenres?.length) {
-    conds.push(or(isNull(songs.genre), notInArray(filterKeySql(songs.genre), f.excludeGenres.map(filterKey)))!);
-  }
-  // Picked artists aren't a condition: their songs come first (pickWithPreferred).
-  return conds;
-}
 
 export async function createGame(opts: {
   playerIds: string[];
@@ -75,21 +59,23 @@ export async function createGame(opts: {
     return { ok: false, error: `${MODES[mode].name} games are ${MODES[mode].lengths.join(", ")} songs long.` };
   }
   const filtered = hasFilters(filters);
-  const matching = filterConditions(filters);
 
   const players = await db.select({ id: users.id }).from(users).where(inArray(users.id, playerIds));
   if (players.length !== playerIds.length) return { ok: false, error: "One of those players no longer exists." };
 
   // Inactive songs are left out entirely: never drawn, never a wrong answer.
-  // Candidates are just id, title and artist; full rows are loaded for the songs picked.
-  const [candidates, { lastUsed }] = await Promise.all([
+  // The decade and genre filters run here with the same code as the game form's
+  // live counts (a song can have several genres). Full rows are loaded only for
+  // the songs picked.
+  const [allCandidates, { lastUsed }] = await Promise.all([
     db
-      .select({ id: songs.id, title: songs.title, artist: songs.artist })
+      .select({ id: songs.id, title: songs.title, artist: songs.artist, year: songs.year, genre: songs.genre })
       .from(songs)
-      .where(and(eq(songs.active, true), ...matching))
+      .where(eq(songs.active, true))
       .orderBy(sql`random()`),
     usedSongs(),
   ]);
+  const candidates = filtered ? allCandidates.filter((c) => matchesFilters(c, filters)) : allCandidates;
   // Copies of one song (same title and artist) count as one song: a game never
   // draws two of them, and a copy of a played song isn't new.
   const seen = new Set<string>();
