@@ -41,8 +41,8 @@ export function DetailsForm({ song }: Props) {
         <Field label="Year">
           <input name="year" defaultValue={song.year ?? ""} inputMode="numeric" maxLength={4} className={inputClass} />
         </Field>
-        <Field label="Genre">
-          <input name="genre" defaultValue={song.genre ?? ""} maxLength={80} className={inputClass} />
+        <Field label="Genres (separate with commas)">
+          <input name="genre" defaultValue={song.genre ?? ""} maxLength={200} placeholder="Pop, Rock" className={inputClass} />
         </Field>
       </div>
       <Field label="Apple Music link">

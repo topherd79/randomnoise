@@ -5,7 +5,8 @@ import {
   bestGuesses,
   companyText,
   decadeOf,
-  genreOf,
+  decadesOf,
+  genresOf,
   isWin,
   ordinal,
   placeOf,
@@ -65,7 +66,7 @@ describe("best and worst genre or decade", () => {
       // No genre at all.
       song({ genre: null, points: 1000 }),
     ];
-    const { best, worst } = bestAndWorst(rows, (r) => genreOf(r.genre));
+    const { best, worst } = bestAndWorst(rows, (r) => genresOf(r.genre));
     expect(best).toEqual({ name: "Electronic", songs: 5, total: 3500, average: 700 });
     expect(worst).toEqual({ name: "Pop", songs: 6, total: 1500, average: 250 });
   });
@@ -75,16 +76,27 @@ describe("best and worst genre or decade", () => {
       ...Array.from({ length: 3 }, () => song({ genre: "Alternatif et Indé", points: 800 })),
       ...Array.from({ length: 2 }, () => song({ genre: "Alternative", points: 300 })),
     ];
-    expect(bestAndWorst(rows, (r) => genreOf(r.genre)).best).toMatchObject({ name: "Alternative", songs: 5, average: 600 });
+    expect(bestAndWorst(rows, (r) => genresOf(r.genre)).best).toMatchObject({ name: "Alternative", songs: 5, average: 600 });
+  });
+
+  it("counts a song with several genres toward each of them", () => {
+    const rows = [
+      ...Array.from({ length: 3 }, () => song({ genre: "Pop/Rock", points: 900 })),
+      ...Array.from({ length: 2 }, () => song({ genre: "Pop", points: 100 })),
+      ...Array.from({ length: 2 }, () => song({ genre: "Rock", points: 500 })),
+    ];
+    const { best, worst } = bestAndWorst(rows, (r) => genresOf(r.genre));
+    expect(best).toEqual({ name: "Rock", songs: 5, total: 3700, average: 740 });
+    expect(worst).toEqual({ name: "Pop", songs: 5, total: 2900, average: 580 });
   });
 
   it("has no worst until two groups qualify", () => {
     const rows = Array.from({ length: 5 }, () => song({ year: 1984 }));
-    expect(bestAndWorst(rows, (r) => decadeOf(r.year))).toEqual({
+    expect(bestAndWorst(rows, (r) => decadesOf(r.year))).toEqual({
       best: { name: "1980s", songs: 5, total: 2500, average: 500 },
       worst: null,
     });
-    expect(bestAndWorst(rows.slice(0, 4), (r) => decadeOf(r.year))).toEqual({ best: null, worst: null });
+    expect(bestAndWorst(rows.slice(0, 4), (r) => decadesOf(r.year))).toEqual({ best: null, worst: null });
   });
 
   it("puts years into decades", () => {

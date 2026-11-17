@@ -3,7 +3,7 @@
 
 import type { WrongAnswerMode } from "@/db/schema";
 import { normalize } from "./normalize";
-import { filterKey } from "./song-filters";
+import { filterKey, genreKeys } from "./song-filters";
 
 export type Candidate = { id: string; title: string; artist: string; year: number | null; genre: string | null };
 
@@ -91,11 +91,12 @@ export function pickWithPreferred<T extends { id: string; artist: string }>(
 // Wrong answers
 // ---------------------------------------------------------------------------
 
-/** How unlike two songs are in era and genre (0 = same genre, same year). */
+/** How unlike two songs are in era and genre (0 = a genre in common, same year). */
 function distance(a: Candidate, b: Candidate): number {
-  const ga = a.genre ? normalize(a.genre) : "";
-  const gb = b.genre ? normalize(b.genre) : "";
-  const genre = !ga || !gb ? 1 : ga === gb ? 0 : 2;
+  const ga = genreKeys(a.genre);
+  const gb = genreKeys(b.genre);
+  // Songs with several genres are alike when they share any of them.
+  const genre = !ga.length || !gb.length ? 1 : ga.some((g) => gb.includes(g)) ? 0 : 2;
   const year = a.year && b.year ? Math.min(Math.abs(a.year - b.year) / 4, 3) : 1.5;
   return genre + year;
 }

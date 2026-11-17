@@ -2,7 +2,7 @@
 // where a player finished in each game. Pure logic (no server imports) so it
 // can be unit tested; src/lib/profiles.ts loads the rows.
 
-import { canonicalGenre } from "./genres";
+import { genreList } from "./genres";
 import { listNames } from "./modes";
 
 /** Top guesses shown on a profile. */
@@ -40,31 +40,43 @@ export function decadeOf(year: number | null): string | null {
   return `${Math.floor(year / 10) * 10}s`;
 }
 
-/** The genre a song counts under (the same names as the catalog and the start-a-game filter). */
-export function genreOf(genre: string | null): string | null {
-  // Snapshots keep the genre as it was when the game was made, which may predate the merged names.
-  return canonicalGenre(genre);
+/**
+ * The genres a song counts under (the same names as the catalog and the
+ * start-a-game filter): a Pop/Rock song counts under Pop and under Rock.
+ * Snapshots keep the genre as it was when the game was made ("Pop/Rock"), which
+ * this reads the same way.
+ */
+export function genresOf(genre: string | null): string[] {
+  return genreList(genre);
+}
+
+/** The decade a song counts under, as a list like genresOf (empty without a year). */
+export function decadesOf(year: number | null): string[] {
+  const d = decadeOf(year);
+  return d ? [d] : [];
 }
 
 export type GroupStat = { name: string; songs: number; total: number; average: number };
 
 /**
- * Best and worst group (genre or decade) by average points a song. Only groups
- * with at least `min` songs count; worst is null unless two groups qualify.
+ * Best and worst group (genre or decade) by average points a song. A song with
+ * several genres counts toward each. Only groups with at least `min` songs
+ * count; worst is null unless two groups qualify.
  */
 export function bestAndWorst(
   rows: ScoredSong[],
-  keyOf: (r: ScoredSong) => string | null,
+  /** The groups a song counts under (a song with two genres counts in both). */
+  keysOf: (r: ScoredSong) => string[],
   min = MIN_SONGS_FOR_BEST,
 ): { best: GroupStat | null; worst: GroupStat | null } {
   const groups = new Map<string, { songs: number; total: number }>();
   for (const r of rows) {
-    const key = keyOf(r);
-    if (!key) continue;
-    const g = groups.get(key) ?? { songs: 0, total: 0 };
-    g.songs += 1;
-    g.total += r.points;
-    groups.set(key, g);
+    for (const key of keysOf(r)) {
+      const g = groups.get(key) ?? { songs: 0, total: 0 };
+      g.songs += 1;
+      g.total += r.points;
+      groups.set(key, g);
+    }
   }
   const ranked = [...groups.entries()]
     .filter(([, g]) => g.songs >= min)

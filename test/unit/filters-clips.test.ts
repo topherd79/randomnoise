@@ -46,6 +46,30 @@ describe("song filters", () => {
   });
 });
 
+describe("songs with several genres", () => {
+  const popRock = { artist: "Someone", year: 1985, genre: "Pop/Rock" };
+  const stored = { artist: "Someone", year: 1985, genre: "Pop, Rock" };
+  it("match a genre filter when any of their genres is ticked", () => {
+    for (const song of [popRock, stored]) {
+      expect(matchesFilters(song, { ...NO_FILTERS, genres: ["rock"] })).toBe(true);
+      expect(matchesFilters(song, { ...NO_FILTERS, genres: ["pop"] })).toBe(true);
+      expect(matchesFilters(song, { ...NO_FILTERS, genres: ["folk"] })).toBe(false);
+    }
+  });
+  it("stay out when any of their genres is left out, even with another ticked (red wins)", () => {
+    expect(matchesFilters(popRock, { ...NO_FILTERS, excludeGenres: ["pop"] })).toBe(false);
+    expect(matchesFilters(popRock, { ...NO_FILTERS, genres: ["rock"], excludeGenres: ["pop"] })).toBe(false);
+  });
+  it("keep a name like Hard Rock whole: ticking Rock doesn't pick it", () => {
+    expect(matchesFilters({ year: 1980, genre: "Hard Rock" }, { ...NO_FILTERS, genres: ["rock"] })).toBe(false);
+    expect(matchesFilters({ year: 1980, genre: "Hard Rock" }, { ...NO_FILTERS, genres: ["hard rock"] })).toBe(true);
+  });
+  it("count under each of their genres", () => {
+    const c = chipCounts([popRock, { year: 1990, genre: "Rock" }, { year: 1977, genre: "Punk - New Wave" }], NO_FILTERS);
+    expect(Object.fromEntries(c.genres)).toEqual({ pop: 1, rock: 2, punk: 1, "new wave": 1 });
+  });
+});
+
 describe("chip counts on the game form", () => {
   const songs = [
     { year: 1975, genre: "Rock" },

@@ -2,6 +2,8 @@
 // form (live counts) and the server (the actual draw), so both agree.
 // No server-only imports here.
 
+import { genreList } from "./genres";
+
 export type SongFilters = {
   /** Decade starts, e.g. 1990 for the 1990s. */
   decades: number[];
@@ -27,6 +29,11 @@ export function filterKey(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/** A song's genres as filter keys: "Pop/Rock" (or "Pop, Rock") is ["pop", "rock"]. */
+export function genreKeys(genre: string | null): string[] {
+  return genreList(genre).map(filterKey);
+}
+
 export function decadeOf(year: number): number {
   return Math.floor(year / 10) * 10;
 }
@@ -38,14 +45,18 @@ export function hasFilters(f: SongFilters): boolean {
 
 /**
  * Any of the ticked options within a filter, and every filter that has
- * something ticked. A song with no year (or genre) can't match a decade (or
- * genre) filter. A left-out genre is never drawn, whatever else is ticked.
+ * something ticked. A song with several genres matches a genre filter when any
+ * of them is ticked; a song with no year (or genre) can't match a decade (or
+ * genre) filter. A left-out genre is never drawn, whatever else is ticked (red
+ * wins: a Pop/Rock song stays out when Pop is left out, even with Rock ticked).
  * Picked artists don't narrow anything here: see isPreferred.
  */
 export function matchesFilters(song: { year: number | null; genre: string | null }, f: SongFilters): boolean {
   if (f.decades.length && (song.year === null || !f.decades.includes(decadeOf(song.year)))) return false;
-  if (f.genres.length && (!song.genre || !f.genres.includes(filterKey(song.genre)))) return false;
-  if (f.excludeGenres?.length && song.genre && f.excludeGenres.includes(filterKey(song.genre))) return false;
+  if (!f.genres.length && !f.excludeGenres?.length) return true;
+  const keys = genreKeys(song.genre);
+  if (f.genres.length && !keys.some((k) => f.genres.includes(k))) return false;
+  if (f.excludeGenres?.length && keys.some((k) => f.excludeGenres!.includes(k))) return false;
   return true;
 }
 
@@ -69,8 +80,8 @@ export function chipCounts(
   const bump = <K,>(m: Map<K, number>, k: K) => m.set(k, (m.get(k) ?? 0) + 1);
   for (const s of songs) {
     if (s.year !== null && matchesFilters(s, { ...f, decades: [] })) bump(decades, decadeOf(s.year));
-    const g = s.genre ? filterKey(s.genre) : "";
-    if (g && matchesFilters(s, { ...f, genres: [], excludeGenres: [] })) bump(genres, g);
+    // A song counts under each of its genres.
+    if (matchesFilters(s, { ...f, genres: [], excludeGenres: [] })) for (const g of genreKeys(s.genre)) bump(genres, g);
   }
   return { decades, genres };
 }

@@ -131,6 +131,26 @@ describe("creating a game", () => {
     expect(artists.every((a) => a === "Queen" || a === "The Killers")).toBe(true);
   });
 
+  it("a song with several genres is drawn for any of them, and left out if any is red", async () => {
+    const me = await addUser("Topher");
+    for (let i = 0; i < 5; i++) await addSong({ title: `PopRock ${i}`, artist: `Band ${i}`, genre: "Pop/Rock" });
+    for (let i = 0; i < 5; i++) await addSong({ title: `Rock ${i}`, artist: `Rocker ${i}`, genre: "Rock" });
+    for (let i = 0; i < 5; i++) await addSong({ title: `Pop ${i}`, artist: `Popper ${i}`, genre: "Pop" });
+    const draw = async (filters: typeof NO_FILTERS) => {
+      const r = await createGame({ ...base, playerIds: [me], songCount: 5, songPool: "mix", filters, createdBy: me });
+      if (!r.ok) return r.error;
+      const titles = (await roundsOf(r.gameId)).map((g) => g.song.title);
+      await cancelGame(r.gameId);
+      return titles;
+    };
+    // Green Pop: the 5 Pop songs and the 5 Pop/Rock songs are all in the running.
+    const pop = await draw({ ...NO_FILTERS, genres: ["pop"] });
+    expect(Array.isArray(pop) && pop.every((t) => t.startsWith("Pop"))).toBe(true);
+    // Green Rock, red Pop: red wins, so only the plain Rock songs.
+    const rockNotPop = await draw({ ...NO_FILTERS, genres: ["rock"], excludeGenres: ["pop"] });
+    expect(Array.isArray(rockNotPop) && rockNotPop.every((t) => /^Rock \d/.test(t))).toBe(true);
+  });
+
   it("a left-out genre is never drawn and never a wrong answer; songs with no genre stay in", async () => {
     const me = await addUser("Topher");
     for (let i = 0; i < 8; i++) await addSong({ title: `Xmas ${i}`, artist: `Elf ${i}`, genre: "Christmas" });

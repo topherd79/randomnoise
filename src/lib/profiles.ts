@@ -6,8 +6,8 @@ import {
   answerSummary,
   bestAndWorst,
   bestGuesses,
-  decadeOf,
-  genreOf,
+  decadesOf,
+  genresOf,
   isWin,
   placeOf,
   resultText,
@@ -178,8 +178,8 @@ export async function loadProfile(userId: string): Promise<Profile | null> {
     right: summary.right,
     averageMs: summary.averageMs,
     bestGuesses: bestGuesses(scored),
-    genres: bestAndWorst(scored, (r) => genreOf(r.genre)),
-    decades: bestAndWorst(scored, (r) => decadeOf(r.year)),
+    genres: bestAndWorst(scored, (r) => genresOf(r.genre)),
+    decades: bestAndWorst(scored, (r) => decadesOf(r.year)),
     past,
   };
 }

@@ -15,7 +15,9 @@ unplayed songs (only songs switched on in the catalog); "Include songs from earl
 default, with 20-second clips) instead draws at random from every song, new or played (`songPool` in `createGame`).
 Optional decade and genre filters (`src/lib/song-filters.ts`) narrow the draw: any option within a filter, all
 filters together. A genre chip cycles off → included (green) → left out (red, `excludeGenres`: never drawn;
-songs with no genre stay in); wrong answers then come from the filtered set when it has enough songs. Each
+songs with no genre stay in). A song with several genres is in when any of them is green and out when any
+is red (red wins); `createGame` runs the same `matchesFilters` as the form. Wrong answers then come from the
+filtered set when it has enough songs. Each
 chip's count follows the other picks (`chipCounts`), and a chip that's off and would leave no songs is dimmed. Picked
 artists don't narrow anything: their songs come first, all picked artists alike and with no per-artist limit,
 and other songs fill the rest (`pickWithPreferred` in `src/lib/draw.ts`); a picked artist's song gets the
@@ -90,8 +92,12 @@ in progress.
   and a copy of a played song counts as played (`usedSongs()` in `src/lib/catalog-queries.ts`). The
   catalog's "Show: Same song more than once" lists them. Answer choices show `cleanTitle()`, which
   hides release labels ("(2015 Remaster)", "(Album Version)") but keeps "(Live …)", "(Acoustic)".
-- **Genres** go through `canonicalGenre()` (`src/lib/genres.ts`) on upload, lookup and edit, so
-  French-tagged files ("Alternatif et Indé") don't split a genre in the start-a-game filter. The catalog
+- **Genres:** a song can have several, stored in `songs.genre` as one line ("Pop, Rock").
+  `genreList()` (`src/lib/genres.ts`) is how code reads them: it splits on "/", ",", ";", "|" or a dash
+  with spaces ("Punk - New Wave"), never on a space, "&" or a plain dash ("Hard Rock", "R&B", "Hip-Hop"
+  stay whole; so does "Singer/Songwriter"), and maps French and variant names ("Alternatif et Indé").
+  Old game snapshots still say "Pop/Rock" and read the same way. `canonicalGenres()` stores them on
+  upload, lookup and edit; migration 0008 split the existing songs. No parent genres: Hard Rock isn't Rock. The catalog
   flags a song with no genre or no year (once its lookup has run) with an orange "Missing genre" /
   "Missing year" chip, and each artist row counts them.
 - **Switched-off songs** (`songs.active = false`) stay in the catalog but new games leave them out
