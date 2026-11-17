@@ -369,8 +369,9 @@ export function SongTable({ rows }: { rows: SongRow[] }) {
   );
 }
 
-/** Switch · title · genre · length · clip · status + Edit (genre and clip hide on narrow screens). */
-const SONG_GRID = "grid-cols-[2.5rem_minmax(0,1fr)_3.5rem_auto] md:grid-cols-[2.5rem_minmax(0,1fr)_9rem_3.5rem_10rem_12rem]";
+/** Switch · title · genre · year · length · clip · status + Edit (genre, year and clip hide on narrow screens). */
+const SONG_GRID =
+  "grid-cols-[2.5rem_minmax(0,1fr)_3.5rem_auto] md:grid-cols-[2.5rem_minmax(0,1fr)_9rem_3rem_3.5rem_10rem_12rem]";
 
 function ArtistItem({ group, open, onToggle }: { group: ArtistGroup; open: boolean; onToggle: () => void }) {
   const named = group.albums.filter((a) => a.name).length;
@@ -441,6 +442,7 @@ function ArtistItem({ group, open, onToggle }: { group: ArtistGroup; open: boole
                         {missingGenre(r) && <MissingGenre />}
                       </span>
                       <span className={`hidden truncate text-muted md:block ${dim}`}>{r.genre ?? "—"}</span>
+                      <span className={`hidden tabular-nums text-muted md:block ${dim}`}>{r.year ?? "—"}</span>
                       <span className={`tabular-nums text-muted ${dim}`}>{formatTime(r.durationSec)}</span>
                       <span className={`hidden truncate text-muted md:block ${dim}`}>
                         {r.clip}
