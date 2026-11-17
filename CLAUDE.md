@@ -127,6 +127,10 @@ in progress.
   player answers.
   The catalog page's "Download catalog (CSV)" (`/api/admin/catalog`, `catalogExport`) counts plays
   from finished and ended games only, for the same reason.
+- **Older iPhones:** `browserslist` in `package.json` adds Safari/iOS 15.4, so the build rewrites newer
+  syntax for them. Next 16 targets Safari 16.4+ by default, and its class static blocks stopped all
+  JavaScript (so Play did nothing) on an iPhone on iOS 16.2. Every iPhone browser, Chrome included, runs
+  the iOS version's Safari engine.
 - Phone screens: max width `max-w-md`, respect safe areas, inputs at 16px+ so iOS doesn't zoom.
   Admin screens are laid out for a desktop browser.
 
