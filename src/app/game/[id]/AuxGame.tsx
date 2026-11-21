@@ -232,16 +232,21 @@ export function AuxGame({ initial }: { initial: AuxState }) {
     setSource(s.myNextClip);
   }, [setSource]);
 
+  /** Inside any tap: sound through the media channel, and keep the screen on. */
+  const prepareTap = useCallback(() => {
+    // iPhones: play through the media channel, which the silent switch doesn't mute.
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session) session.type = "playback";
+    void keepAwake();
+  }, [keepAwake]);
+
   /**
    * Inside a tap: play a moment of silence. After that, an iPhone lets this
    * page start the songs by itself, on cue.
    */
   const unlock = useCallback(() => {
     const el = audio.current;
-    // iPhones: play through the media channel, which the silent switch doesn't mute.
-    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
-    if (session) session.type = "playback";
-    void keepAwake();
+    prepareTap();
     if (!el || unlockedRef.current || (!el.paused && !el.ended)) return;
     loaded.current = SILENCE;
     el.src = SILENCE;
@@ -254,7 +259,7 @@ export function AuxGame({ initial }: { initial: AuxState }) {
       },
       () => {},
     );
-  }, [keepAwake, maybePreload]);
+  }, [prepareTap, maybePreload]);
 
   /** Start my turn's clip from the top (on cue, or from a tap). */
   const playClip = useCallback(() => {
@@ -287,6 +292,11 @@ export function AuxGame({ initial }: { initial: AuxState }) {
 
   function onPlaying() {
     setClipPlaying(true);
+    // A clip that plays means this phone may play the next ones too.
+    if (loaded.current !== SILENCE && !unlockedRef.current) {
+      unlockedRef.current = true;
+      setUnlocked(true);
+    }
     const el = audio.current;
     const t = latest.current.turn;
     if (!el || !t || t.playerId !== me || loaded.current !== t.clipUrl) return;
@@ -406,8 +416,9 @@ export function AuxGame({ initial }: { initial: AuxState }) {
     }
   }
 
+  /** Play (a missed cue) or Replay: the clip itself plays inside the tap. */
   function onPlayTap() {
-    unlock();
+    prepareTap();
     playClip();
   }
 
