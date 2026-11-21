@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { openLobbyFor } from "@/lib/aux-game";
+import { activeGamesIn, chatSummaries } from "@/lib/chat";
+import { ChatTab } from "@/components/ChatTab";
 import { myGames } from "@/lib/game-view";
 import { pastGames } from "@/lib/profiles";
 import { Logo } from "@/components/Logo";
@@ -22,7 +24,9 @@ export default async function Home(props: PageProps<"/">) {
     const lobby = await openLobbyFor(user.id);
     if (lobby) redirect(`/game/${lobby}`);
   }
-  const [active, past] = await Promise.all([myGames(user.id), pastGames(user.id)]);
+  const [active, past, chats] = await Promise.all([myGames(user.id), pastGames(user.id), chatSummaries(user.id)]);
+  const chatIds = chats.map((c) => c.id);
+  const chatGames = await activeGamesIn(chatIds);
   const finished = past.filter((g) => g.status === "finished");
   const record = { games: finished.length, wins: finished.filter((g) => g.won).length };
 
@@ -125,6 +129,10 @@ export default async function Home(props: PageProps<"/">) {
           </div>
           <PastGamesList games={past.slice(0, RECENT)} />
         </section>
+      )}
+
+      {chats.length > 0 && (
+        <ChatTab chatIds={chatIds} gameIds={chatGames} unread={chats.reduce((n, c) => n + c.unread, 0)} />
       )}
 
       <form action={logout} className="text-center">

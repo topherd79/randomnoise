@@ -63,6 +63,24 @@ in progress.
 - These games count like any other (profiles, wins, "new songs", admin lists, CSV). Each song has one
   pick, its player's, so results and the admin grid show "–" for everyone else.
 
+## Chat
+
+- One chat per exact group of players, kept across their games (`chats.member_key` = the members' ids,
+  sorted). `createGame` joins every game of 2+ players to its group's chat (`games.chat_id`); solo and Pass
+  the Aux games have none. Migration 0010 made chats for the groups that had already played.
+- Spoilers: each message stores, for each game the group had running, the furthest song its writer had
+  heard (`chat_messages.holds`). Anyone in that game who hasn't answered that song gets the message
+  without its words (`heldUntil` in `src/lib/chat-rules.ts`) and the panel shows sparkles; once the game
+  is over everything shows. The words of a held-back message never leave the server (`loadChat`).
+- Text and emoji, plus reactions (one per person per message; the same one again takes it back). No
+  deleting, no emails: the unread count on the tab is the only alert (`chat_members.last_read_at`).
+  A removed player's messages keep their name (`sender_name`). The admin sees only the chats they're in.
+- The panel is `src/components/ChatTab.tsx`: a tab on the right edge with the unread count in its bubble,
+  which slides the chat in over the page. On a game page it's that group's chat; on the home page, a list
+  of your chats. It talks to `/api/chat` and `/api/chat/[id]` with fetch (never a page reload), gets
+  "chat" events from `/api/live` (`publishChatUpdate`), and hides while a song is playing (`PlayRound`
+  sends `rn:song`). `<LiveRefresh>` waits while the chat is open, then catches up.
+
 ## Stack
 
 - Next.js 16 (App Router, TypeScript, Tailwind v4). `cacheComponents` is deliberately **off**: nearly
@@ -134,7 +152,8 @@ in progress.
 - **Live updates:** anything that changes a game calls `publishGameUpdate(gameId)` (`src/lib/live.ts`,
   Postgres NOTIFY, so it reaches every app instance). `/api/live` streams "update" events (game id
   only, no game data) to `<LiveRefresh>`, which calls `router.refresh()`; it holds off while music is
-  playing and falls back to 20 s polling if the feed is closed or silent (heartbeat every 25 s).
+  playing (or the chat is open) and falls back to 20 s polling if the feed is closed or silent (heartbeat
+  every 25 s). Chats use the same feed: `publishChatUpdate(chatId)` sends a "chat" event.
   Mount it only on screens where nobody is mid-song. New code that changes game state must publish.
 - **Game history is a snapshot:** each `game_songs` row keeps a copy of the song's details (`song`
   jsonb) and `song_id` has no foreign key, so catalog songs can be deleted (or edited) without
@@ -190,7 +209,8 @@ npm run typecheck && npm run lint && npm test && npm run build
 - GitHub Actions (`.github/workflows/ci.yml`) runs all four on every pull request and push to `main`.
 - Pure logic lives in modules without server-only imports so it can be unit tested: `rules.ts`,
   `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`,
-  `modes.ts` (rounds per game mode), `aux.ts` (Pass the Aux turns and timings), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
+  `modes.ts` (rounds per game mode), `aux.ts` (Pass the Aux turns and timings), `chat-rules.ts` (held-back
+  messages, reactions), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
   worst genre and decade, placings).
 - **Artist limit:** a game has at most one song per artist for every five songs
   (`maxSongsPerArtist` in `src/lib/draw.ts`), except artists picked on the form; it never blocks a

@@ -60,6 +60,8 @@ export type Waiter = { userId: string; name: string; left: number };
 
 export type GameView = {
   id: string;
+  /** The players' chat (null for a solo game or Pass the Aux). */
+  chatId: string | null;
   status: "active" | "finished" | "cancelled";
   mode: GameMode;
   songCount: number;
@@ -234,6 +236,7 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
   const history = completed.map(resultsFor).reverse();
   return {
     id: g.id,
+    chatId: g.mode === "aux" ? null : g.chatId,
     status: g.status,
     mode: g.mode,
     songCount: g.songCount,

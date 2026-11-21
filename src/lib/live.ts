@@ -95,7 +95,22 @@ export async function publishGameUpdate(gameId: string): Promise<void> {
   }
 }
 
-/** Call onUpdate whenever one of these games changes. Returns an unsubscribe function. */
+/** Tell every open chat panel of this chat that something changed (a message or a reaction). Never throws. */
+export async function publishChatUpdate(chatId: string): Promise<void> {
+  try {
+    await db.execute(sql`select pg_notify(${CHANNEL}, ${chatKey(chatId)})`);
+  } catch (err) {
+    console.error("Live updates: chat publish failed", err);
+  }
+}
+
+/** Chats share the channel with games; their signals are prefixed so the two never mix. */
+export const chatKey = (chatId: string) => `chat:${chatId}`;
+
+/**
+ * Call onUpdate whenever one of these games changes. Returns an unsubscribe
+ * function. (Also used for chats, with chatKey() ids.)
+ */
 export async function subscribeToGames(gameIds: string[], onUpdate: (gameId: string) => void): Promise<() => void> {
   const handler = (gameId: string) => onUpdate(gameId);
   for (const id of gameIds) hub.emitter.on(id, handler);

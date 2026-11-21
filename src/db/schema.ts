@@ -12,6 +12,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { GameMode } from "../lib/modes";
+import type { ChatHold } from "../lib/chat-rules";
 
 /** Everyone who can log in. The admin is a regular player too (matched by ADMIN_EMAIL). */
 export const users = pgTable("users", {
@@ -182,6 +183,8 @@ export const games = pgTable("games", {
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
+  /** The chat of this game's players (null for a solo game and for Pass the Aux, played in one room). */
+  chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
 });
 
 export const gamePlayers = pgTable(
@@ -282,3 +285,73 @@ export const nudges = pgTable(
 export type Game = typeof games.$inferSelect;
 export type GameSong = typeof gameSongs.$inferSelect;
 export type Answer = typeof answers.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Chat: one per exact group of players, kept across games (see src/lib/chat.ts)
+// ---------------------------------------------------------------------------
+
+export const chats = pgTable("chats", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** The members' user ids, sorted and joined with commas: a group of players has exactly one chat. */
+  memberKey: text("member_key").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+});
+
+export const chatMembers = pgTable(
+  "chat_members",
+  {
+    chatId: uuid("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Messages after this are unread (the count on the chat tab). */
+    lastReadAt: timestamp("last_read_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.chatId, t.userId] }), index("chat_members_user_idx").on(t.userId)],
+);
+
+/**
+ * A message is held back from anyone who hasn't played as far as its writer
+ * had: for each game the group had running when it was sent, the furthest
+ * song the writer had heard (tapped Play on). See chat-rules.ts.
+ */
+export type { ChatHold };
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    chatId: uuid("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    /** Null once the writer has been removed from the app; their name stays on the message. */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    senderName: text("sender_name").notNull(),
+    body: text("body").notNull(),
+    holds: jsonb("holds").$type<ChatHold[]>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("chat_messages_chat_idx").on(t.chatId, t.createdAt)],
+);
+
+/** One reaction per person per message (a different one replaces it; the same one again takes it back). */
+export const chatReactions = pgTable(
+  "chat_reactions",
+  {
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => chatMessages.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.messageId, t.userId] })],
+);
+
+export type Chat = typeof chats.$inferSelect;
+export type ChatMessage = typeof chatMessages.$inferSelect;

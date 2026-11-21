@@ -34,6 +34,11 @@ type Props = {
 
 type Phase = "ready" | "starting" | "playing" | "sending" | "done";
 
+/** Tell the chat tab a song started (it hides) or is over (it comes back). */
+function songOn(on: boolean) {
+  window.dispatchEvent(new CustomEvent("rn:song", { detail: on ? "playing" : "done" }));
+}
+
 export function PlayRound({ gameSongId, position, total, clipUrl, choices, startedAt, serverNow, showRules = true }: Props) {
   const router = useRouter();
   const audio = useRef<HTMLAudioElement>(null);
@@ -52,6 +57,11 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
   const reloadTimer = useRef<number | undefined>(undefined);
   // Once this song's screen goes away (the refresh worked), the backup reload isn't needed.
   useEffect(() => () => window.clearTimeout(reloadTimer.current), []);
+  // The chat tab hides while a song is playing (no chat mid-song), and comes back after.
+  useEffect(() => {
+    if (startedAt) songOn(true);
+    return () => songOn(false);
+  }, [startedAt]);
 
   // Tick the clock while choices are revealing (and a little after, for the points display).
   useEffect(() => {
@@ -92,6 +102,7 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
     setClipPlaying(true);
     if (clockStarted.current) return;
     clockStarted.current = true;
+    songOn(true);
     setClockStart(Date.now());
     setPhase("playing");
     // Earlier results may sit above this song: bring the choices into view.
@@ -134,6 +145,7 @@ export function PlayRound({ gameSongId, position, total, clipUrl, choices, start
     audio.current?.pause();
     setResult(r.result);
     setPhase("done");
+    songOn(false);
     // Show the full "you answered" page (song, full track, links, who's left).
     setTimeout(() => router.refresh(), 1600);
     reloadTimer.current = window.setTimeout(() => window.location.reload(), 1600 + MOVE_ON_MS);
