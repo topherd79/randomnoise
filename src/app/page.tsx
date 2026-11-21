@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
+import { openLobbyFor } from "@/lib/aux-game";
 import { myGames } from "@/lib/game-view";
 import { pastGames } from "@/lib/profiles";
 import { Logo } from "@/components/Logo";
@@ -12,8 +14,14 @@ import { Avatar, PastGamesList, SectionTitle, gamesAndWins } from "./profile/par
 /** How many past games the home screen lists before "See all". */
 const RECENT = 3;
 
-export default async function Home() {
+export default async function Home(props: PageProps<"/">) {
   const user = await requireUser();
+  // A Pass the Aux lobby is open: everyone's in the room about to play, so go
+  // straight there (the game's own Home link adds ?stay to really come here).
+  if (!(await props.searchParams).stay) {
+    const lobby = await openLobbyFor(user.id);
+    if (lobby) redirect(`/game/${lobby}`);
+  }
   const [active, past] = await Promise.all([myGames(user.id), pastGames(user.id)]);
   const finished = past.filter((g) => g.status === "finished");
   const record = { games: finished.length, wins: finished.filter((g) => g.won).length };
@@ -47,6 +55,27 @@ export default async function Home() {
           <LiveRefresh gameIds={active.map((g) => g.id)} />
           <p className="text-muted">Hi {user.name},</p>
           {active.map((g) => {
+            if (g.aux) {
+              const a = g.aux;
+              return (
+                <Link key={g.id} href={`/game/${g.id}`} className="block rounded-3xl bg-surface p-6 transition active:scale-[0.99]">
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">
+                    Pass the Aux · {a.lobby ? `${a.players} players` : g.label}
+                  </p>
+                  <h1 className="mt-2 text-3xl font-bold leading-tight">
+                    {a.lobby ? "The lobby's open." : a.myTurn ? "It's your turn." : `${a.turnName}'s turn.`}
+                  </h1>
+                  <p className="mt-2 text-muted">
+                    {a.lobby
+                      ? `You're player ${a.myNumber}. ${a.joined} of ${a.players} in.`
+                      : `You're player ${a.myNumber}. With ${listNames(g.others)}.`}
+                  </p>
+                  <span className="mt-6 block rounded-full bg-accent py-4 text-center text-lg font-semibold text-accent-ink">
+                    {a.lobby ? "Join the lobby" : "Back to the game"}
+                  </span>
+                </Link>
+              );
+            }
             return (
               <Link key={g.id} href={`/game/${g.id}`} className="block rounded-3xl bg-surface p-6 transition active:scale-[0.99]">
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">

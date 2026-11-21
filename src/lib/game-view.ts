@@ -6,6 +6,7 @@ import { appleMusicLink, spotifyLink } from "./links";
 import { choiceLabel, shuffleFor } from "./rules";
 import { roundState, standings, type Standing } from "./games";
 import { inRound, nextPosition, openRound, roundLabel, songsLeft, waitingNote, waitingOnYouText } from "./modes";
+import { auxSummary } from "./aux-game";
 
 export type SongInfo = {
   title: string;
@@ -150,7 +151,7 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
   // Callers only pass songs this player may see the picks for.
   const resultsFor = (r: (typeof rounds)[number]): ResultsView => {
     const labelOf = new Map(r.gs.choices.map((c: Choice) => [c.songId, choiceLabel(c)]));
-    const picks: Pick[] = players.map((p) => {
+    let picks: Pick[] = players.map((p) => {
       const a = answerOf(r.gs.id, p.userId);
       if (!a?.answeredAt) {
         const pending = active && !r.gs.completedAt;
@@ -165,6 +166,8 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
         elapsedMs: a.elapsedMs,
       };
     });
+    // Pass the Aux: each song is one player's turn, so only they have a pick.
+    if (g.mode === "aux") picks = picks.filter((p) => answerOf(r.gs.id, p.userId)?.answeredAt);
     picks.sort(
       (x, y) =>
         Number(Boolean(x.pending)) - Number(Boolean(y.pending)) ||
@@ -262,6 +265,7 @@ export async function myGames(userId: string) {
 
   const states = await Promise.all(
     active.map(async (g) => {
+      const aux = g.mode === "aux" ? await auxSummary(g.id, userId) : null;
       const [{ round, answered }, players] = await Promise.all([
         roundState(g),
         db
@@ -279,6 +283,9 @@ export async function myGames(userId: string) {
       const waitingOn = others.filter((w) => w.left > 0);
       return {
         id: g.id,
+        mode: g.mode,
+        /** Pass the Aux: the lobby, or whose turn it is (everyone plays together, so no "waiting on"). */
+        aux,
         songCount: g.songCount,
         label: roundLabel(g.mode, g.songCount, round),
         roundLength: round.end - round.start + 1,
@@ -350,12 +357,14 @@ export async function loadGameResults(gameIds: string[]): Promise<Map<string, Ga
 
     const songResults: SongResult[] = gameRounds.map((r) => {
       const labelOf = new Map(r.gs.choices.map((c: Choice) => [c.songId, choiceLabel(c)]));
-      const picks: Pick[] = players.map((p) => {
+      const picks: Pick[] = players.flatMap((p) => {
         const a = roundAnswers.find((x) => x.gameSongId === r.gs.id && x.userId === p.userId);
         const t = totals.get(p.userId)!;
         t.points += a?.points ?? 0;
         if (a?.correct) t.correct += 1;
         if (a?.answeredAt) t.played += 1;
+        // Pass the Aux: each song is one player's turn, so only they have a pick.
+        if (g.mode === "aux" && !a?.answeredAt) return [];
         return {
           userId: p.userId,
           name: p.name,

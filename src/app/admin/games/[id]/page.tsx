@@ -23,7 +23,7 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const progress = await gameProgress(id);
   if (!progress) notFound();
-  const { game, players, standings, label, roundLength } = progress;
+  const { game, players, standings, label, roundLength, aux } = progress;
   const several = roundLength > 1;
   const active = game.status === "active";
   // Song-by-song results only once the game is over (the admin plays too).
@@ -48,7 +48,27 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
       </header>
 
       <div className="grid gap-10 lg:grid-cols-[1fr_320px]">
-        {active ? (
+        {aux ? (
+          <section>
+            <h2 className="text-lg font-bold">{aux.lobby ? "Lobby" : "Turn order"}</h2>
+            <p className="mt-1 text-sm text-muted">
+              {aux.lobby
+                ? "Everyone taps I'm in, then the first player in starts the game. 30 seconds after the last I'm in, they can start without anyone missing."
+                : "Turns move on by themselves: a turn ends when the player answers or the time runs out."}
+            </p>
+            <ol className="mt-4 divide-y divide-line overflow-hidden rounded-2xl border border-line">
+              {aux.order.map((p, i) => (
+                <li key={p.userId} className="flex flex-wrap items-center gap-4 px-4 py-3">
+                  <span className="w-6 text-muted tabular-nums">{i + 1}</span>
+                  <span className="w-32 font-semibold">{p.name}</span>
+                  <span className="flex-1 text-sm text-muted">
+                    {aux.lobby ? (p.joinedAt ? `In, ${since(p.joinedAt)}` : "Not in yet") : aux.turnUserId === p.userId ? "Their turn" : "Watching"}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : active ? (
           <section>
             <h2 className="text-lg font-bold">{several ? "Open songs" : "This song"}</h2>
             <p className="mt-1 text-sm text-muted">

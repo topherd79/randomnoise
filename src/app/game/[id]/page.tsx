@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { loadGameView, type GameView } from "@/lib/game-view";
+import { isAuxGame, loadAuxState } from "@/lib/aux-game";
 import { formatPoints, formatSeconds } from "@/lib/rules";
 import { waitingOnYouText } from "@/lib/modes";
 import { Logo } from "@/components/Logo";
@@ -10,6 +11,7 @@ import { PlayRound } from "./PlayRound";
 import { PicksList, ResultsCard, SongCard } from "./parts";
 import { Standings } from "./Standings";
 import { Waiting } from "./Waiting";
+import { AuxGame } from "./AuxGame";
 
 function serverTime() {
   return Date.now();
@@ -20,7 +22,25 @@ export default async function GamePage(props: PageProps<"/game/[id]">) {
   const { id } = await props.params;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const view = await loadGameView(id, user.id);
-  if (!view) notFound();
+  if (!view) {
+    // Pass the Aux drops players who weren't in the lobby when it started.
+    if (await isAuxGame(id)) return <LeftOut />;
+    notFound();
+  }
+
+  // Pass the Aux in progress: one screen for the whole game, kept up to date by itself.
+  if (view.mode === "aux" && view.status === "active") {
+    const state = await loadAuxState(id, user.id);
+    if (state?.status === "active") {
+      return (
+        <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(env(safe-area-inset-top),1.25rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)]">
+          <AuxGame initial={state} />
+        </main>
+      );
+    }
+    // It just ended: show the results.
+    if (state) return GamePage(props);
+  }
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(env(safe-area-inset-top),1.25rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)]">
@@ -133,6 +153,28 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
   );
 }
 
+function LeftOut() {
+  return (
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(env(safe-area-inset-top),1.25rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)]">
+      <header>
+        <Link href="/?stay=1" aria-label="Home">
+          <Logo />
+        </Link>
+      </header>
+      <section className="flex flex-1 flex-col justify-center py-10">
+        <h1 className="text-3xl font-bold leading-tight">This game started without you.</h1>
+        <p className="mt-4 text-lg leading-relaxed text-muted">
+          It&apos;s a Pass the Aux game, played in one room, and it began while you weren&apos;t in the lobby. You&apos;ll get an email when
+          the next game starts.
+        </p>
+        <Link href="/?stay=1" className="mt-8 rounded-full bg-surface-2 py-3 text-center font-semibold text-ink">
+          Home
+        </Link>
+      </section>
+    </main>
+  );
+}
+
 function OverGame({ view, userId }: { view: GameView; userId: string }) {
   const top = view.standings[0];
   const winners = view.standings.filter((s) => s.points === top?.points);
@@ -154,7 +196,12 @@ function OverGame({ view, userId }: { view: GameView; userId: string }) {
       </section>
       <Standings gameId={view.id} me={userId} standings={view.standings} songs={view.songs} title="Final standings" />
       {view.history.map((r) => (
-        <ResultsCard key={r.position} results={r} title={`Song ${r.position}`} />
+        <ResultsCard
+          key={r.position}
+          results={r}
+          // Pass the Aux: each song was one player's turn.
+          title={view.mode === "aux" && r.picks[0] ? `Song ${r.position} · ${r.picks[0].name}` : `Song ${r.position}`}
+        />
       ))}
       <Link href="/" className="rounded-full bg-surface-2 py-3 text-center font-semibold text-ink">
         Home

@@ -1,10 +1,13 @@
 // Game modes: how many songs are open at a time. Pure logic (no server
 // imports) so it can be unit tested and used by the start-a-game form.
 //
-// Every mode works the same way: songs open in rounds, and the next round opens
-// once every player has answered every song in the current one.
+// The first three modes work the same way: songs open in rounds, and the next
+// round opens once every player has answered every song in the current one.
+// Pass the Aux ("aux") is different: everyone is in one room and players take
+// turns, one song each (see src/lib/aux.ts). Its songs still go one at a time,
+// so the round helpers below treat it like The OG.
 
-export const GAME_MODES = ["og", "three", "all"] as const;
+export const GAME_MODES = ["og", "three", "all", "aux"] as const;
 export type GameMode = (typeof GAME_MODES)[number];
 
 export const MODES: Record<GameMode, { name: string; description: string; lengths: readonly number[]; defaultLength: number }> = {
@@ -26,6 +29,14 @@ export const MODES: Record<GameMode, { name: string; description: string; length
     lengths: [5, 10, 15, 20, 25],
     defaultLength: 10,
   },
+  aux: {
+    name: "Pass the Aux",
+    description:
+      "Everyone in one room. Players take turns: only the player whose turn it is hears the song and answers; everyone else watches live. 2 to 5 players.",
+    // 5 songs a player (see AUX_SONGS_PER_PLAYER in aux.ts): set by the number of players.
+    lengths: [10, 15, 20, 25],
+    defaultLength: 10,
+  },
 };
 
 export function isGameMode(s: unknown): s is GameMode {
@@ -37,7 +48,7 @@ export const ALL_LENGTHS = [...new Set(GAME_MODES.flatMap((m) => MODES[m].length
 
 /** How many songs open at once. */
 export function roundSize(mode: GameMode, songCount: number): number {
-  return mode === "og" ? 1 : mode === "three" ? 3 : songCount;
+  return mode === "three" ? 3 : mode === "all" ? songCount : 1;
 }
 
 export type Round = { start: number; end: number };

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { answers, gamePlayers, gameSongs, games, users, type GameMode, type GameStatus } from "@/db/schema";
 import { roundState, standings } from "./games";
 import { nextPosition, openRound, roundLabel, songsLeft } from "./modes";
+import { turnIndex } from "./aux";
 
 // What the admin's Games screens show. The admin also plays, so nothing here
 // may reveal the songs of a game in progress: progress and players only.
@@ -65,7 +66,13 @@ export async function gameSummaries(opts: GameFilter & { limit: number; offset?:
   if (rows.length === 0) return [];
   const ids = rows.map((g) => g.id);
   const players = await db
-    .select({ gameId: gamePlayers.gameId, userId: users.id, name: users.name })
+    .select({
+      gameId: gamePlayers.gameId,
+      userId: users.id,
+      name: users.name,
+      turnOrder: gamePlayers.turnOrder,
+      joinedAt: gamePlayers.joinedAt,
+    })
     .from(gamePlayers)
     .innerJoin(users, eq(users.id, gamePlayers.userId))
     .where(inArray(gamePlayers.gameId, ids))
@@ -77,22 +84,55 @@ export async function gameSummaries(opts: GameFilter & { limit: number; offset?:
       const active = g.status === "active";
       const { round, answered } = await roundState(g);
       const table = active ? [] : await standings(g.id);
+      const aux = active && g.mode === "aux" ? auxProgress(g, ps) : null;
       return {
         id: g.id,
         status: g.status,
         mode: g.mode,
         createdAt: g.createdAt,
         songCount: g.songCount,
-        label: roundLabel(g.mode, g.songCount, round),
+        label: aux ? aux.label : roundLabel(g.mode, g.songCount, round),
         roundLength: round.end - round.start + 1,
         players: ps.map((p) => p.name),
-        waitingOn: active
-          ? ps.map((p) => ({ name: p.name, left: songsLeft(round, answered(p.userId)) })).filter((w) => w.left > 0)
-          : [],
+        waitingOn: aux
+          ? aux.waitingOn
+          : active
+            ? ps.map((p) => ({ name: p.name, left: songsLeft(round, answered(p.userId)) })).filter((w) => w.left > 0)
+            : [],
         leader: table[0] ?? null,
       };
     }),
   );
+}
+
+type AuxPlayerRow = { userId: string; name: string; turnOrder: number | null; joinedAt: Date | null };
+
+/**
+ * Pass the Aux in progress: the lobby (who isn't in yet, or who starts), or
+ * whose turn it is. Players only, never the song.
+ */
+function auxProgress(game: typeof games.$inferSelect, players: AuxPlayerRow[]) {
+  const order = [...players].sort((a, b) => (a.turnOrder ?? 0) - (b.turnOrder ?? 0) || a.userId.localeCompare(b.userId));
+  if (!game.turnStartsAt) {
+    const out = order.filter((p) => !p.joinedAt);
+    const starter = order.find((p) => p.joinedAt);
+    return {
+      label: "Lobby open",
+      lobby: true,
+      turnUserId: null,
+      // Waiting on whoever isn't in yet, or on the first player in to tap Start.
+      waitingOn: (out.length ? out : starter ? [starter] : []).map((p) => ({ name: p.name, left: 1 })),
+      order,
+    };
+  }
+  const turn = order.length ? order[turnIndex(game.currentPosition, order.length)] : null;
+  return {
+    label: `Song ${game.currentPosition} of ${game.songCount}`,
+    lobby: false,
+    turnUserId: turn?.userId ?? null,
+    waitingOn: turn ? [{ name: turn.name, left: 1 }] : [],
+    order,
+  };
 }
 
 /** One game's progress: where each player is in the open round, without saying what the songs are. */
@@ -100,7 +140,7 @@ export async function gameProgress(gameId: string) {
   const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   if (!game) return null;
   const players = await db
-    .select({ userId: users.id, name: users.name })
+    .select({ userId: users.id, name: users.name, turnOrder: gamePlayers.turnOrder, joinedAt: gamePlayers.joinedAt })
     .from(gamePlayers)
     .innerJoin(users, eq(users.id, gamePlayers.userId))
     .where(eq(gamePlayers.gameId, gameId))
@@ -137,11 +177,14 @@ export async function gameProgress(gameId: string) {
       resetGameSongId: started ? nextSong!.id : (lastAnswered?.id ?? null),
     };
   });
+  const aux = game.status === "active" && game.mode === "aux" ? auxProgress(game, players) : null;
   return {
     game,
-    label: roundLabel(game.mode, game.songCount, round),
+    label: aux ? aux.label : roundLabel(game.mode, game.songCount, round),
     roundLength: round.end - round.start + 1,
     players: states,
+    /** Pass the Aux in progress: the lobby or whose turn it is (no resets: turns move on by themselves). */
+    aux,
     standings: await standings(gameId),
   };
 }

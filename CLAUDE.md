@@ -28,12 +28,40 @@ of what a right one would have earned, so guessing is worth zero on average). Pl
 answer on their own time. Songs open in rounds, by game mode (`src/lib/modes.ts`): **The OG** one
 song at a time (5–25 songs), **3 songs** three at a time (6/9/15/18 songs), **All songs** every song
 open from the start (5–25 songs). The next round opens only when everyone has answered every song in
-this one. Once you've answered a song you see everyone's picks for it so far; standings show each
+this one. **Pass the Aux** is for one room: players take turns, 5 songs each (see below). Once you've answered a song you see everyone's picks for it so far; standings show each
 player's points for every song they've answered so far ("12 of 15 played"), and tapping a name in
 them shows that player's song-by-song history
 (only songs you've answered). Once everyone else has played every open song, the one player left sees
 "Sarah and Topher are waiting on you" on the home card and game page (`waitingOnYouText` in `modes.ts`). The admin also plays, so admin screens never show the songs of a game
 in progress.
+
+## Pass the Aux (in one room)
+
+- Pure rules and timings in `src/lib/aux.ts`; server side in `src/lib/aux-game.ts`; the phone screen is
+  `src/app/game/[id]/AuxGame.tsx`, talking to `/api/aux/[id]` (GET: the game for this player; POST: a tap).
+- Creating the game draws a random turn order (`game_players.turn_order`) and opens a lobby
+  (`games.turn_starts_at` is null). Everyone taps I'm in (`joined_at`); the first player in turn order
+  who's in gets Start. 30 s after the last I'm in, they can start without whoever's missing: those
+  players are removed, everyone moves up a number, and songs beyond 5 a player are deleted with their
+  clips. The home page sends players straight to an open lobby (`openLobbyFor`; `/?stay=1` skips it).
+- Song p is player ((p − 1) mod n) + 1's turn. The server keeps the clock: `turn_starts_at` is when the
+  current song's clip should start; the turn ends 5 s after the later of the clip ending and the
+  answers finishing (`turnLengthMs`). Scoring is unchanged, from `answers.started_at` (when the clip
+  really started on the turn player's phone). A turn that runs out is scored as an answer with no pick
+  and 0 points by `settleAuxTurn`, which every state request runs, so a dead phone can't stall the game.
+  After each song: 3 s result, 3 s countdown (`finishTurn` sets the next `turn_starts_at`).
+- The phone page never reloads mid-game: the "I'm in" (or Start, or Play) tap plays a moment of silence
+  on the page's one `<audio>`, which lets iPhones start each later clip on cue with no tap. If a cue
+  fails anyway, the turn player gets a big Play button and the turn keeps running. Wake Lock keeps the
+  screen on (iOS 16.4+). The answered song keeps playing through the result and countdown, then stops
+  as the next song starts (iPhones can't fade a page's volume).
+- Only the turn player's phone gets the clip (`mayPlayAuxClip`), only they can play or answer; every
+  phone gets the choices in the turn player's order, never which is right until the song is over. A
+  song's clip is deleted when the song after it ends (it plays through the changeover); the last
+  one 40 s after the game. Nudges and resets don't apply; the other modes' `startSong`/`answerSong`
+  refuse Pass the Aux songs.
+- These games count like any other (profiles, wins, "new songs", admin lists, CSV). Each song has one
+  pick, its player's, so results and the admin grid show "–" for everyone else.
 
 ## Stack
 
@@ -162,7 +190,7 @@ npm run typecheck && npm run lint && npm test && npm run build
 - GitHub Actions (`.github/workflows/ci.yml`) runs all four on every pull request and push to `main`.
 - Pure logic lives in modules without server-only imports so it can be unit tested: `rules.ts`,
   `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`,
-  `modes.ts` (rounds per game mode), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
+  `modes.ts` (rounds per game mode), `aux.ts` (Pass the Aux turns and timings), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
   worst genre and decade, placings).
 - **Artist limit:** a game has at most one song per artist for every five songs
   (`maxSongsPerArtist` in `src/lib/draw.ts`), except artists picked on the form; it never blocks a
