@@ -16,6 +16,9 @@ const secs = (ms: number) => formatSeconds(ms).replace(" ", "\u00a0");
  *
  * `songs` only holds songs this viewer may see (ones they've answered, or every
  * song once the game is over), so a history never gives an answer away.
+ *
+ * A player who's out (the others played on without them) stays at the bottom,
+ * crossed out and grayed, with no place and the points they had.
  */
 export function Standings({
   gameId,
@@ -56,11 +59,11 @@ export function Standings({
                 aria-expanded={isOpen}
                 disabled={history.length === 0}
                 onClick={() => setOpen(isOpen ? null : s.userId)}
-                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${isOpen ? "bg-surface-2" : "active:bg-surface-2"}`}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${isOpen ? "bg-surface-2" : "active:bg-surface-2"} ${s.out ? "opacity-45" : ""}`}
               >
-                <span className="w-6 text-center font-bold text-muted tabular-nums">{i + 1}</span>
+                <span className="w-6 text-center font-bold text-muted tabular-nums">{s.out ? "–" : i + 1}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block font-semibold">{s.name}</span>
+                  <span className={`block font-semibold ${s.out ? "line-through" : ""}`}>{s.name}</span>
                   {played && (
                     <span className="block text-xs text-muted">
                       {s.played} of {played.songCount} played
@@ -119,7 +122,11 @@ function HistoryRow({
   pick: Pick;
 }) {
   const answered = pick.label !== null;
-  const detail = pick.pending
+  // Out of the game before this song: a blank line.
+  const blank = Boolean(pick.out) && !answered;
+  const detail = blank
+    ? null
+    : pick.pending
     ? "Not played yet"
     : !answered
       ? "No answer"
@@ -132,7 +139,7 @@ function HistoryRow({
         className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
           pick.correct ? "bg-accent text-accent-ink" : answered ? "bg-danger/20 text-danger" : "bg-surface-2 text-muted"
         }`}
-        aria-label={pick.correct ? "right" : answered ? "wrong" : pick.pending ? "not played yet" : "no answer"}
+        aria-label={pick.correct ? "right" : answered ? "wrong" : blank ? "out of the game" : pick.pending ? "not played yet" : "no answer"}
       >
         {pick.correct ? "✓" : answered ? "✕" : "–"}
       </span>
@@ -141,9 +148,7 @@ function HistoryRow({
           <span className="text-muted tabular-nums">{position}.</span> <span className="font-semibold">{title}</span>
           <span className="text-muted"> – {artist}</span>
         </span>
-        <span className="block text-xs text-muted">
-          {detail}
-        </span>
+        {detail && <span className="block text-xs text-muted">{detail}</span>}
       </span>
       {pick.points !== null && !pick.pending && (
         <span

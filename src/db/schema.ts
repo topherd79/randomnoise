@@ -200,6 +200,12 @@ export const gamePlayers = pgTable(
     turnOrder: integer("turn_order"),
     /** Pass the Aux only: when they tapped "I'm in" in the lobby. */
     joinedAt: timestamp("joined_at", { withTimezone: true }),
+    /**
+     * When the game went on without them (everyone else voted, or the admin took
+     * them out). They stay in its results, crossed out; it never waits on them again.
+     */
+    outAt: timestamp("out_at", { withTimezone: true }),
+    outBy: text("out_by").$type<"vote" | "admin">(),
   },
   (t) => [primaryKey({ columns: [t.gameId, t.userId] }), index("game_players_user_idx").on(t.userId)],
 );
@@ -280,6 +286,29 @@ export const nudges = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("nudges_game_song_idx").on(t.gameSongId)],
+);
+
+/**
+ * Votes to play on without the one player holding a game up, kept per round:
+ * when everyone else has voted, that player is out (game_players.out_at).
+ */
+export const playOnVotes = pgTable(
+  "play_on_votes",
+  {
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    /** The round's first song: a vote counts only while that round is open. */
+    roundStart: integer("round_start").notNull(),
+    targetUserId: uuid("target_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    voterUserId: uuid("voter_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.gameId, t.roundStart, t.targetUserId, t.voterUserId] })],
 );
 
 export type Game = typeof games.$inferSelect;

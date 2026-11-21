@@ -188,10 +188,11 @@ function ordinal(n: number): string {
 const signed = (p: number) => (p > 0 ? `+${formatPoints(p)}` : formatPoints(p));
 const C = { ink: "#0d0d12", body: "#3a3a44", muted: "#8a8a96", line: "#ececf0", right: "#2e8a35", wrong: "#cc3344" };
 
-/** One song's picks, best score first (no answer last; ties by name). */
-const byScore = <T extends { name: string; points: number | null; label: string | null }>(picks: T[]): T[] =>
+/** One song's picks, best score first (no answer last, players who are out after that; ties by name). */
+const byScore = <T extends { name: string; points: number | null; label: string | null; out?: boolean }>(picks: T[]): T[] =>
   [...picks].sort(
     (a, b) =>
+      Number(Boolean(a.out)) - Number(Boolean(b.out)) ||
       (b.label === null ? -Infinity : (b.points ?? 0)) - (a.label === null ? -Infinity : (a.points ?? 0)) ||
       a.name.localeCompare(b.name),
   );
@@ -202,8 +203,9 @@ function resultsSection(results: GameResults) {
   const standingsRows = results.standings
     .map(
       (s, i) =>
-        `<tr><td style="padding:8px 8px 8px 0;border-top:1px solid ${C.line};color:${C.muted};width:20px;">${i + 1}</td>` +
-        `<td style="padding:8px 0;border-top:1px solid ${C.line};font-weight:700;color:${C.ink};">${escapeHtml(s.name)}</td>` +
+        // A player who's out: no place, crossed out, grayed.
+        `<tr><td style="padding:8px 8px 8px 0;border-top:1px solid ${C.line};color:${C.muted};width:20px;">${s.out ? "&ndash;" : i + 1}</td>` +
+        `<td style="padding:8px 0;border-top:1px solid ${C.line};font-weight:700;color:${s.out ? C.muted : C.ink};">${s.out ? `<s>${escapeHtml(s.name)}</s>` : escapeHtml(s.name)}</td>` +
         `<td style="padding:8px 0;border-top:1px solid ${C.line};color:${C.muted};font-size:14px;">${s.correct} right</td>` +
         `<td style="padding:8px 0;border-top:1px solid ${C.line};font-weight:700;color:${C.ink};text-align:right;">${formatPoints(s.points)}</td></tr>`,
     )
@@ -218,6 +220,9 @@ function resultsSection(results: GameResults) {
       const picks = byScore(song.picks)
         .map((p) => {
           if (p.label === null) {
+            if (p.out) {
+              return `<tr><td style="padding:5px 0;width:22px;color:${C.muted};">&ndash;</td><td style="padding:5px 0;color:${C.muted};"><s>${escapeHtml(p.name)}</s></td><td></td></tr>`;
+            }
             return `<tr><td style="padding:5px 0;width:22px;color:${C.muted};">&ndash;</td><td style="padding:5px 0;color:${C.body};">${escapeHtml(p.name)} <span style="color:${C.muted};">&middot; no answer</span></td><td></td></tr>`;
           }
           const pts = p.points ?? 0;
@@ -229,7 +234,7 @@ function resultsSection(results: GameResults) {
             .join(" &middot; ");
           return (
             `<tr><td style="padding:5px 0;width:22px;vertical-align:top;">${mark}</td>` +
-            `<td style="padding:5px 0;color:${C.body};vertical-align:top;">${escapeHtml(p.name)}<br><span style="font-size:13px;color:${C.muted};">${detail}</span></td>` +
+            `<td style="padding:5px 0;color:${p.out ? C.muted : C.body};vertical-align:top;">${p.out ? `<s>${escapeHtml(p.name)}</s>` : escapeHtml(p.name)}<br><span style="font-size:13px;color:${C.muted};">${detail}</span></td>` +
             `<td style="padding:5px 0;text-align:right;vertical-align:top;font-weight:700;color:${pts > 0 ? C.right : pts < 0 ? C.wrong : C.muted};white-space:nowrap;">${signed(pts)}</td></tr>`
           );
         })
@@ -256,7 +261,9 @@ function resultsSection(results: GameResults) {
 
   const text = [
     "FINAL STANDINGS",
-    ...results.standings.map((s, i) => `${i + 1}. ${s.name}: ${formatPoints(s.points)} points (${s.correct} right)`),
+    ...results.standings.map((s, i) =>
+      s.out ? `–  ${s.name} (out): ${formatPoints(s.points)} points (${s.correct} right)` : `${i + 1}. ${s.name}: ${formatPoints(s.points)} points (${s.correct} right)`,
+    ),
     "",
     "SONG BY SONG",
     ...results.songs.flatMap((song) => [
@@ -264,7 +271,9 @@ function resultsSection(results: GameResults) {
       `Song ${song.position}: ${song.title} – ${song.artist}`,
       ...byScore(song.picks).map((p) =>
         p.label === null
-          ? `  – ${p.name}: no answer`
+          ? p.out
+            ? `  – ${p.name} (out)`
+            : `  – ${p.name}: no answer`
           : `  ${p.correct ? "✓" : "✗"} ${p.name}: ${signed(p.points ?? 0)}` +
             `${p.elapsedMs !== null ? ` in ${formatSeconds(p.elapsedMs)}` : ""}${p.correct ? "" : ` (picked ${p.label})`}`,
       ),
@@ -277,8 +286,9 @@ function resultsSection(results: GameResults) {
 /** The one email after the last song: who won, final standings and every song's results. */
 export function gameOverEmail(name: string, userId: string, url: string, results: GameResults) {
   const standings = results.standings;
-  const winner = standings[0];
-  const tied = standings.filter((s) => s.points === winner?.points);
+  // Anyone out of the game has no place (they're last, crossed out).
+  const winner = standings.find((s) => !s.out);
+  const tied = standings.filter((s) => !s.out && s.points === winner?.points);
   const headline = !winner
     ? "Game over"
     : tied.length > 1

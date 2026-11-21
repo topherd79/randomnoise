@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { pastGames, type PastGame } from "@/lib/profiles";
+import { gameRecord, pastGames, type PastGame } from "@/lib/profiles";
 import { BackLink, PastGamesList, SectionTitle } from "../parts";
 
 const STEP = 20;
@@ -11,8 +11,7 @@ export default async function PastGamesPage(props: PageProps<"/profile/games">) 
   const asked = Number.parseInt(String(sp.show ?? ""), 10);
   const show = Number.isFinite(asked) && asked > STEP ? asked : STEP;
   const all = await pastGames(user.id);
-  const finished = all.filter((g) => g.status === "finished");
-  const wins = finished.filter((g) => g.won).length;
+  const { games: finishedCount, wins } = gameRecord(all);
   const shown = all.slice(0, show);
   const older = all.length - shown.length;
 
@@ -36,7 +35,7 @@ export default async function PastGamesPage(props: PageProps<"/profile/games">) 
         <p className="mt-1.5 text-muted">
           {all.length === 0
             ? "Games you've played show up here once they're over."
-            : `${finished.length} ${finished.length === 1 ? "game" : "games"} · ${wins} ${wins === 1 ? "win" : "wins"} · tap one for its song-by-song results`}
+            : `${finishedCount} ${finishedCount === 1 ? "game" : "games"} · ${wins} ${wins === 1 ? "win" : "wins"} · tap one for its song-by-song results`}
         </p>
       </section>
 

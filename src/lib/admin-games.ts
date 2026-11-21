@@ -20,6 +20,8 @@ export type PlayerState = {
   left: number;
   /** The attempt a reset would clear: the song they're on, or else their latest answer still open. */
   resetGameSongId: string | null;
+  /** Out of the game (everyone else voted, or the admin took them out): it no longer waits on them. */
+  out: "vote" | "admin" | null;
 };
 
 /** Narrows the All games list. */
@@ -72,6 +74,7 @@ export async function gameSummaries(opts: GameFilter & { limit: number; offset?:
       name: users.name,
       turnOrder: gamePlayers.turnOrder,
       joinedAt: gamePlayers.joinedAt,
+      outAt: gamePlayers.outAt,
     })
     .from(gamePlayers)
     .innerJoin(users, eq(users.id, gamePlayers.userId))
@@ -97,9 +100,12 @@ export async function gameSummaries(opts: GameFilter & { limit: number; offset?:
         waitingOn: aux
           ? aux.waitingOn
           : active
-            ? ps.map((p) => ({ name: p.name, left: songsLeft(round, answered(p.userId)) })).filter((w) => w.left > 0)
+            ? ps
+                .filter((p) => !p.outAt)
+                .map((p) => ({ name: p.name, left: songsLeft(round, answered(p.userId)) }))
+                .filter((w) => w.left > 0)
             : [],
-        leader: table[0] ?? null,
+        leader: table.find((t) => !t.out) ?? null,
       };
     }),
   );
@@ -140,7 +146,14 @@ export async function gameProgress(gameId: string) {
   const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   if (!game) return null;
   const players = await db
-    .select({ userId: users.id, name: users.name, turnOrder: gamePlayers.turnOrder, joinedAt: gamePlayers.joinedAt })
+    .select({
+      userId: users.id,
+      name: users.name,
+      turnOrder: gamePlayers.turnOrder,
+      joinedAt: gamePlayers.joinedAt,
+      outBy: gamePlayers.outBy,
+      outAt: gamePlayers.outAt,
+    })
     .from(gamePlayers)
     .innerJoin(users, eq(users.id, gamePlayers.userId))
     .where(eq(gamePlayers.gameId, gameId))
@@ -167,6 +180,7 @@ export async function gameProgress(gameId: string) {
     const nextSong = open.find((o) => o.position === next);
     const started = nextSong ? mine.find((a) => a.gameSongId === nextSong.id && !a.answeredAt) : undefined;
     const lastAnswered = [...open].reverse().find((o) => !o.completedAt && answeredPositions.has(o.position));
+    const out = p.outAt ? (p.outBy ?? "admin") : null;
     return {
       userId: p.userId,
       name: p.name,
@@ -174,7 +188,8 @@ export async function gameProgress(gameId: string) {
       startedAt: started?.startedAt ?? null,
       nextPosition: next,
       left: songsLeft(round, answeredPositions),
-      resetGameSongId: started ? nextSong!.id : (lastAnswered?.id ?? null),
+      resetGameSongId: out ? null : started ? nextSong!.id : (lastAnswered?.id ?? null),
+      out,
     };
   });
   const aux = game.status === "active" && game.mode === "aux" ? auxProgress(game, players) : null;

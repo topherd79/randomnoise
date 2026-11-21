@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { endGameAction, resetAttemptAction, type FormResult } from "../actions";
+import { endGameAction, resetAttemptAction, takeOutAction, type FormResult } from "../actions";
 
 export function ResetButton({ gameId, gameSongId, userId, name }: { gameId: string; gameSongId: string; userId: string; name: string }) {
   const [note, setNote] = useState<FormResult>(null);
@@ -18,6 +18,28 @@ export function ResetButton({ gameId, gameSongId, userId, name }: { gameId: stri
         className="rounded-full bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-line disabled:opacity-50"
       >
         Reset attempt
+      </button>
+    </span>
+  );
+}
+
+/** Take a player out of this game: it goes on without them; they stay in its results, crossed out. */
+export function TakeOutButton({ gameId, userId, name }: { gameId: string; userId: string; name: string }) {
+  const [note, setNote] = useState<FormResult>(null);
+  const [pending, startTransition] = useTransition();
+  if (note?.ok) return <span className="text-xs text-accent">{note.message}</span>;
+  return (
+    <span className="flex items-center gap-3">
+      {note && <span className="text-xs text-danger">{note.message}</span>}
+      <button
+        disabled={pending}
+        onClick={() => {
+          if (!confirm(`Take ${name} out of this game? It goes on without them, and they stay in its results, crossed out. This can't be undone.`)) return;
+          startTransition(async () => setNote(await takeOutAction(gameId, userId)));
+        }}
+        className="rounded-full border border-danger/40 px-3 py-1.5 text-xs font-semibold text-danger transition hover:bg-danger/10 disabled:opacity-50"
+      >
+        Take out of game
       </button>
     </span>
   );

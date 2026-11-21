@@ -40,6 +40,16 @@ export type PastGame = {
   /** "You won", "Dave won", "You and Dave tied", "Mike led"; empty for a game played alone. */
   result: string;
   won: boolean;
+  /**
+   * The game went on without this player: shown as "Out", left after `played`
+   * songs. Like a game ended early, those songs count toward their numbers, but
+   * not as a game played or won.
+   */
+  out: boolean;
+  /** Songs this player answered. */
+  played: number;
+  /** Players who finished it (not out); one alone is never a win. */
+  playersIn: number;
 };
 
 type PastRow = {
@@ -52,6 +62,8 @@ type PastRow = {
   user_id: string;
   name: string;
   points: string;
+  played: string;
+  out: boolean;
 };
 
 /** Every game a player was in that's over (finished or ended early), newest first. */
@@ -62,7 +74,9 @@ export async function pastGames(userId: string): Promise<PastGame[]> {
       extract(epoch from coalesce(g.finished_at, g.created_at)) * 1000 as at_ms,
       (select count(*) from game_songs c where c.game_id = g.id and c.completed_at is not null) as completed,
       u.id as user_id, u.name,
-      coalesce(sum(a.points) filter (where a.answered_at is not null), 0) as points
+      coalesce(sum(a.points) filter (where a.answered_at is not null), 0) as points,
+      count(a.id) filter (where a.answered_at is not null) as played,
+      gp.out_at is not null as out
     from games g
     join game_players me on me.game_id = g.id and me.user_id = ${userId}
     join game_players gp on gp.game_id = g.id
@@ -70,12 +84,12 @@ export async function pastGames(userId: string): Promise<PastGame[]> {
     left join game_songs gs on gs.game_id = g.id
     left join answers a on a.game_song_id = gs.id and a.user_id = gp.user_id
     where g.status <> 'active'
-    group by g.id, u.id, u.name
+    group by g.id, u.id, u.name, gp.out_at
     order by at_ms desc, g.id
   `);
 
   const order: string[] = [];
-  const byGame = new Map<string, { row: PastRow; table: GameTotal[] }>();
+  const byGame = new Map<string, { row: PastRow; table: (GameTotal & { out: boolean; played: number })[] }>();
   for (const r of rows.rows) {
     let g = byGame.get(r.id);
     if (!g) {
@@ -83,13 +97,17 @@ export async function pastGames(userId: string): Promise<PastGame[]> {
       byGame.set(r.id, g);
       order.push(r.id);
     }
-    g.table.push({ userId: r.user_id, name: r.name, points: Number(r.points) });
+    g.table.push({ userId: r.user_id, name: r.name, points: Number(r.points), out: Boolean(r.out), played: Number(r.played) });
   }
 
   return order.map((id) => {
-    const { row, table } = byGame.get(id)!;
+    const { row, table: everyone } = byGame.get(id)!;
     const ended = row.status === "cancelled";
-    const me = table.find((t) => t.userId === userId);
+    const me = everyone.find((t) => t.userId === userId);
+    const out = Boolean(me?.out);
+    // Places, wins and who won go by the players who stayed in; anyone out has no place.
+    const table = everyone.filter((t) => !t.out);
+    const others = everyone.filter((t) => t.userId !== userId);
     return {
       id,
       status: row.status,
@@ -98,13 +116,31 @@ export async function pastGames(userId: string): Promise<PastGame[]> {
       completed: Number(row.completed),
       date: new Date(Number(row.at_ms)),
       points: me?.points ?? 0,
-      place: placeOf(table, userId),
-      players: table.length,
-      others: table.filter((t) => t.userId !== userId).map((t) => t.name),
-      result: table.length > 1 ? resultText(table, userId, ended) : "",
-      won: !ended && isWin(table, userId),
+      place: out ? table.length + 1 : placeOf(table, userId),
+      players: everyone.length,
+      others: others.map((t) => t.name),
+      result: table.length > 1 || (out && table.length > 0) ? resultText(table, userId, ended) : "",
+      won: !ended && !out && isWin(table, userId),
+      out,
+      played: me?.played ?? 0,
+      playersIn: table.length,
     };
   });
+}
+
+/**
+ * Whether a past game counts as a game played: finished, and they were still
+ * in it. A game ended early, or one that went on without them, counts only
+ * through its songs.
+ */
+export function playedThrough(g: PastGame): boolean {
+  return g.status === "finished" && !g.out;
+}
+
+/** Games played and won, for "12 games · 5 wins". */
+export function gameRecord(past: PastGame[]) {
+  const played = past.filter(playedThrough);
+  return { games: played.length, wins: played.filter((g) => g.won).length };
 }
 
 /** The songs that count toward a player's numbers: answered, in a game that's over, and finished by everyone. */
@@ -166,7 +202,7 @@ export async function loadProfile(userId: string): Promise<Profile | null> {
     .limit(1);
   if (!user) return null;
   const [scored, past] = await Promise.all([scoredSongs(userId), pastGames(userId)]);
-  const finished = past.filter((g) => g.status === "finished");
+  const finished = past.filter(playedThrough);
   const summary = answerSummary(scored);
   return {
     userId: user.id,

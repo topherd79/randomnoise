@@ -25,7 +25,8 @@ picked artists' songs as wrong answers when there are enough. For each song, a p
 "Title – Artist" choices (1 right, 3 random other catalog songs) reveal letter by letter and finish
 together, and a faster correct answer scores more (1,000 sliding to 100; a wrong answer loses a third
 of what a right one would have earned, so guessing is worth zero on average). Players
-answer on their own time. Songs open in rounds, by game mode (`src/lib/modes.ts`): **The OG** one
+answer on their own time (and when one player holds everyone up, the others can vote to play on without
+them: see below). Songs open in rounds, by game mode (`src/lib/modes.ts`): **The OG** one
 song at a time (5–25 songs), **3 songs** three at a time (6/9/15/18 songs), **All songs** every song
 open from the start (5–25 songs). The next round opens only when everyone has answered every song in
 this one. **Pass the Aux** is for one room: players take turns, 5 songs each (see below). Once you've answered a song you see everyone's picks for it so far; standings (the podium tab on the
@@ -62,6 +63,29 @@ in progress.
   refuse Pass the Aux songs.
 - These games count like any other (profiles, wins, "new songs", admin lists, CSV). Each song has one
   pick, its player's, so results and the admin grid show "–" for everyone else.
+
+## Playing on without a player
+
+- The OG, 3 songs and All songs, never Pass the Aux. Rules and wording in `src/lib/play-on.ts` (pure);
+  the server side in `src/lib/play-on-game.ts` (`loadPlayOn`, `voteToPlayOn`, `takeOutOfGame`).
+- When every player still in but one has played every open song, `PLAY_ON_WAIT_HOURS` (4) after the last
+  of them answered (`PLAY_ON_WAIT_HOURS_TWO`, 10, in a game of two, where the other player decides
+  alone), the others can vote on the waiting card (`Waiting.tsx`, with a confirm sheet). It takes every
+  one of their votes (`play_on_votes`, kept per round, so a vote lapses if the player catches up and the
+  round moves on); no taking a vote back; the player is never told (`loadPlayOn` is null for them). The
+  home card says "Mike voted to play on without Dave. Your vote?" (`playOnHomeText`).
+- Out (`game_players.out_at`, `out_by` "vote" or "admin"): `takeOutOfGame` drops a song they'd tapped
+  Play on but not answered, then the game moves on (`afterPlayerRemoved`). Everything that counts
+  players counts only those still in: completing a song, "waiting on", nudges, startSong/answerSong,
+  clips, emails, the home screen (the game leaves theirs). Their game page says "This game went on
+  without you" until it's over; they stay in the group's chat. Taking out a voter can finish a vote
+  (`settlePlayOn`). The admin's "Take out of game" (admin game page) works any time.
+- They stay in the results: at the bottom of the standings with no place ("–"), crossed out and grayed
+  (`Standing.out`, `Pick.out`), with the points they had; their picks stay on songs they played, and
+  songs after are a blank crossed-out line. Same in the game-over email and the admin grid. Wins and
+  places go by the players still in; finishing alone is never a win. In their past games the game shows
+  "Out" ("Left after 3 of 9 songs"); like a game ended early, their answered songs count toward their
+  profile numbers but not as a game played or won (`playedThrough`, `gameRecord` in `profiles.ts`).
 
 ## Chat
 
@@ -194,11 +218,13 @@ in progress.
 - **Profiles** (`src/lib/profiles.ts`, numbers in `src/lib/profile-stats.ts`): `/profile` (your own, with
   past games at `/profile/games`) and `/players/[id]` (a friend's short version, `ProfileSummary`, reached
   from a name in a finished game's standings; in a side panel the same summary opens in the panel). Only games that are over count: finished games, plus the finished songs of games ended early
-  (which count toward the numbers but not as a game played or won). A game played alone is never a win.
+  (which count toward the numbers but not as a game played or won); a game that went on without them
+  counts the same way ("Out"). A game played alone, or finished alone, is never a win.
   Best and worst genre and decade go by average points a song, with at least 5 songs. Anyone you've played
   a game with can open your profile (`maySeeProfile`); the admin can open anyone's.
 - **Admin games:** the Games page shows the 5 most recent games; `/admin/games/all` lists every game with
   status, mode and player filters, 25 a page (`gameSummaries`, `countGames` in `src/lib/admin-games.ts`).
+  A game in progress has Reset attempt and Take out of game for each player, and End game.
 - **Admin screens never show the songs of a game in progress** (the admin plays too): see
   `src/lib/admin-games.ts`. Clips have random file names, are only served to players in that game
   and never ahead of that player's next song (`mayPlayClip`); the full song unlocks only after a
@@ -233,7 +259,8 @@ npm run typecheck && npm run lint && npm test && npm run build
 - GitHub Actions (`.github/workflows/ci.yml`) runs all four on every pull request and push to `main`.
 - Pure logic lives in modules without server-only imports so it can be unit tested: `rules.ts`,
   `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`,
-  `modes.ts` (rounds per game mode), `aux.ts` (Pass the Aux turns and timings), `chat-rules.ts` (held-back
+  `modes.ts` (rounds per game mode), `aux.ts` (Pass the Aux turns and timings), `play-on.ts` (playing on
+  without a player), `chat-rules.ts` (held-back
   messages, reactions, time lines), `scroll-lock.ts` (`blocksDrag`, `movesCursor`), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
   worst genre and decade, placings).
 - **Artist limit:** a game has at most one song per artist for every five songs

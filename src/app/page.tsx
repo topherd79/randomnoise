@@ -5,7 +5,7 @@ import { openLobbyFor } from "@/lib/aux-game";
 import { activeGamesIn, chatSummaries } from "@/lib/chat";
 import { SideTabs } from "@/components/SideTabs";
 import { myGames } from "@/lib/game-view";
-import { pastGames } from "@/lib/profiles";
+import { gameRecord, pastGames } from "@/lib/profiles";
 import { Logo } from "@/components/Logo";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -25,8 +25,7 @@ export default async function Home(props: PageProps<"/">) {
   const [active, past, chats] = await Promise.all([myGames(user.id), pastGames(user.id), chatSummaries(user.id)]);
   const chatIds = chats.map((c) => c.id);
   const chatGames = await activeGamesIn(chatIds);
-  const finished = past.filter((g) => g.status === "finished");
-  const record = { games: finished.length, wins: finished.filter((g) => g.won).length };
+  const record = gameRecord(past);
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(env(safe-area-inset-top),1.5rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)]">
@@ -88,6 +87,9 @@ export default async function Home(props: PageProps<"/">) {
                 </h1>
                 {g.waitingOnYou ? (
                   <p className="mt-2 font-semibold text-accent">{g.waitingOnYou}</p>
+                ) : g.playOn ? (
+                  // A vote to play on without the one player holding the game up.
+                  <p className={`mt-2 ${g.playOn.mine ? "text-muted" : "font-semibold text-accent"}`}>{g.playOn.text}</p>
                 ) : (
                   g.others.length > 0 && <p className="mt-2 text-muted">With {listNames(g.others)}</p>
                 )}

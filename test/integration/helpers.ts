@@ -27,7 +27,7 @@ function templateMp3(): string {
 /** Empty every table and the clip/song folders. */
 export async function resetAll(): Promise<void> {
   await db.execute(
-    sql`truncate table chat_reactions, chat_messages, chat_members, chats, answers, nudges, game_songs, game_players, games, sessions, login_tokens, songs, users restart identity cascade`,
+    sql`truncate table play_on_votes, chat_reactions, chat_messages, chat_members, chats, answers, nudges, game_songs, game_players, games, sessions, login_tokens, songs, users restart identity cascade`,
   );
   for (const folder of ["clips", "songs", "custom-clips"]) rmSync(path.join(dataDir, folder), { recursive: true, force: true });
 }

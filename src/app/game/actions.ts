@@ -2,6 +2,7 @@
 
 import { requireUser } from "@/lib/auth";
 import { answerSong, nudge, startSong, type AnswerResult } from "@/lib/games";
+import { voteToPlayOn } from "@/lib/play-on-game";
 
 // Server actions are public endpoints: each one checks the player, and the game
 // functions check that they're in the game and that the song is open to them.
@@ -23,4 +24,11 @@ export async function nudgeAction(gameId: string, toUserId: string): Promise<{ o
   const user = await requireUser();
   const r = await nudge(user.id, String(gameId), String(toUserId));
   return r.ok ? { ok: true, message: r.message } : { ok: false, message: r.error };
+}
+
+/** A vote to play on without the one player holding the game up (can't be taken back). */
+export async function playOnVoteAction(gameId: string, targetId: string): Promise<{ ok: boolean; message: string }> {
+  const user = await requireUser();
+  const r = await voteToPlayOn(user.id, String(gameId), String(targetId));
+  return r.ok ? { ok: true, message: "Voted." } : { ok: false, message: r.error };
 }
