@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blocksDrag } from "@/lib/scroll-lock";
+import { blocksDrag, CURSOR_HOLD_MS, movesCursor } from "@/lib/scroll-lock";
 
 // A panel's list: 1,000 px of messages in a 400 px window.
 const at = (scrollTop: number, scrollHeight = 1000, clientHeight = 400) => ({ scrollTop, scrollHeight, clientHeight });
@@ -25,5 +25,12 @@ describe("holding the page still behind a panel", () => {
 
   it("leaves a sideways move alone", () => {
     expect(blocksDrag(at(0), 0)).toBe(false);
+  });
+
+  it("in the message box, tells a drag (moves at once) from moving the cursor (held still first)", () => {
+    expect(movesCursor(40)).toBe(false);
+    expect(movesCursor(CURSOR_HOLD_MS - 1)).toBe(false);
+    expect(movesCursor(CURSOR_HOLD_MS)).toBe(true);
+    expect(movesCursor(800)).toBe(true);
   });
 });
