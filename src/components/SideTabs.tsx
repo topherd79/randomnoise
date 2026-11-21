@@ -5,6 +5,7 @@ import type { ChatMessageView, ChatSummary, ChatView } from "@/lib/chat";
 import { MAX_MESSAGE_LENGTH, REACTIONS, sparkleDots, sparkleWidth, stampBefore, stampText } from "@/lib/chat-rules";
 import { reportClientError } from "@/lib/client-errors";
 import { withTimeout } from "@/lib/timeout";
+import { lockPageScroll, PANEL_SCROLL } from "@/lib/scroll-lock";
 import { PanelNavProvider, type PanelPage } from "./PanelNav";
 import { PanelPageView } from "./PanelPages";
 
@@ -182,16 +183,16 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
     return () => window.removeEventListener("rn:song", onSong);
   }, []);
 
-  // While a panel is open: the page behind doesn't scroll, and doesn't refresh under you (LiveRefresh waits).
+  // While a panel is open: the page behind holds still, keyboard up or not (only the panel's lists
+  // scroll), and doesn't refresh under you (LiveRefresh waits).
   const isOpen = open !== null;
   useEffect(() => {
     if (!isOpen) return;
     const root = document.documentElement;
-    const before = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockPageScroll();
     root.dataset.panelOpen = "1";
     return () => {
-      document.body.style.overflow = before;
+      unlock();
       delete root.dataset.panelOpen;
       window.dispatchEvent(new Event("rn:panel-closed"));
     };
@@ -399,7 +400,9 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
                   <span className="text-[17px] font-bold">{podium.title}</span>
                   {podium.subtitle && <span className="text-xs text-muted">{podium.subtitle}</span>}
                 </header>
-                <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">{podium.content}</div>
+                <div {...PANEL_SCROLL} className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+                  {podium.content}
+                </div>
               </div>
               {pages.map((page, i) => (
                 <div key={`${i}-${page.kind}-${page.id}`} className={i === pages.length - 1 ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
@@ -417,7 +420,7 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
                     <span className="text-[17px] font-bold">{page.title}</span>
                     {page.subtitle && <span className="text-xs text-muted">{page.subtitle}</span>}
                   </header>
-                  <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+                  <div {...PANEL_SCROLL} className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
                     <PanelPageView page={page} />
                   </div>
                 </div>
@@ -440,7 +443,7 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
                   {showing?.status && <span className="text-xs text-muted">{showing.status}</span>}
                 </span>
               </header>
-              <div ref={scroller} onScroll={onScroll} className="relative flex flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-3">
+              <div ref={scroller} {...PANEL_SCROLL} onScroll={onScroll} className="relative flex flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-3">
                 {reactingOn && <div className="fixed inset-0 z-10" onClick={() => setReactingOn(null)} aria-hidden="true" />}
                 {showing ? (
                   <Messages messages={showing.messages} reactingOn={reactingOn} onPress={setReactingOn} onReact={onReact} />
@@ -545,7 +548,7 @@ function ChatList({ chats, onOpen }: { chats: ChatSummary[] | null; onOpen: (id:
         <span className="text-[17px] font-bold">Chats</span>
         {total > 0 && <span className="text-xs text-muted">{total} unread</span>}
       </header>
-      <ol className="flex-1 overflow-y-auto overscroll-contain px-3">
+      <ol {...PANEL_SCROLL} className="flex-1 overflow-y-auto overscroll-contain px-3">
         {chats === null ? (
           <li className="py-10 text-center text-sm text-muted">Loading…</li>
         ) : (
