@@ -28,8 +28,8 @@ of what a right one would have earned, so guessing is worth zero on average). Pl
 answer on their own time. Songs open in rounds, by game mode (`src/lib/modes.ts`): **The OG** one
 song at a time (5–25 songs), **3 songs** three at a time (6/9/15/18 songs), **All songs** every song
 open from the start (5–25 songs). The next round opens only when everyone has answered every song in
-this one. **Pass the Aux** is for one room: players take turns, 5 songs each (see below). Once you've answered a song you see everyone's picks for it so far; standings show each
-player's points for every song they've answered so far ("12 of 15 played"), and tapping a name in
+this one. **Pass the Aux** is for one room: players take turns, 5 songs each (see below). Once you've answered a song you see everyone's picks for it so far; standings (the podium tab on the
+right edge) show each player's points for every song they've answered so far ("12 of 15 played"), and tapping a name in
 them shows that player's song-by-song history
 (only songs you've answered). Once everyone else has played every open song, the one player left sees
 "Sarah and Topher are waiting on you" on the home card and game page (`waitingOnYouText` in `modes.ts`). The admin also plays, so admin screens never show the songs of a game
@@ -75,11 +75,16 @@ in progress.
 - Text and emoji, plus reactions (one per person per message; the same one again takes it back). No
   deleting, no emails: the unread count on the tab is the only alert (`chat_members.last_read_at`).
   A removed player's messages keep their name (`sender_name`). The admin sees only the chats they're in.
-- The panel is `src/components/ChatTab.tsx`: a tab on the right edge with the unread count in its bubble,
-  which slides the chat in over the page. On a game page it's that group's chat; on the home page, a list
-  of your chats. It talks to `/api/chat` and `/api/chat/[id]` with fetch (never a page reload), gets
-  "chat" events from `/api/live` (`publishChatUpdate`), and hides while a song is playing (`PlayRound`
-  sends `rn:song`). `<LiveRefresh>` waits while the chat is open, then catches up.
+- **Side tabs** (`src/components/SideTabs.tsx`): two tabs stacked on the right edge, chat on top (unread
+  count in its bubble) and a podium under it. Each slides its panel in over the page; the open tab joins
+  its panel like a folder tab and the other keeps its outline (tap it to switch). On a game page: the
+  group's chat, and the standings (`Standings` with `bare`), which are no longer on the page; a finished
+  game keeps its final standings on the page and gets no podium. On the home page: your chats, and all
+  your past games (no longer listed on the page). Tabs and panels share one see-through background
+  (`GLASS`); what's inside stays solid. Not in Pass the Aux (it has its scores strip), and both hide
+  while a song is playing (`PlayRound` sends `rn:song`). The chat talks to `/api/chat` and
+  `/api/chat/[id]` with fetch (never a page reload) and gets "chat" events from `/api/live`
+  (`publishChatUpdate`). `<LiveRefresh>` waits while a panel is open, then catches up.
 
 ## Stack
 
@@ -152,7 +157,7 @@ in progress.
 - **Live updates:** anything that changes a game calls `publishGameUpdate(gameId)` (`src/lib/live.ts`,
   Postgres NOTIFY, so it reaches every app instance). `/api/live` streams "update" events (game id
   only, no game data) to `<LiveRefresh>`, which calls `router.refresh()`; it holds off while music is
-  playing (or the chat is open) and falls back to 20 s polling if the feed is closed or silent (heartbeat
+  playing (or a side panel is open) and falls back to 20 s polling if the feed is closed or silent (heartbeat
   every 25 s). Chats use the same feed: `publishChatUpdate(chatId)` sends a "chat" event.
   Mount it only on screens where nobody is mid-song. New code that changes game state must publish.
 - **Game history is a snapshot:** each `game_songs` row keeps a copy of the song's details (`song`

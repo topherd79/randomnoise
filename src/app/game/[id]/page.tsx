@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { loadGameView, type GameView } from "@/lib/game-view";
 import { isAuxGame, loadAuxState } from "@/lib/aux-game";
 import { unreadIn } from "@/lib/chat";
-import { ChatTab } from "@/components/ChatTab";
+import { SideTabs } from "@/components/SideTabs";
 import { formatPoints, formatSeconds } from "@/lib/rules";
 import { waitingOnYouText } from "@/lib/modes";
 import { Logo } from "@/components/Logo";
@@ -55,13 +55,42 @@ export default async function GamePage(props: PageProps<"/game/[id]">) {
         </span>
       </header>
       {view.status === "active" ? <ActiveGame view={view} userId={user.id} /> : <OverGame view={view} userId={user.id} />}
-      {/* The group's chat, unless they're in the middle of a song (that screen is PlayRound alone). */}
-      {view.chatId && !(view.status === "active" && view.next?.my.startedAt) && (
-        <ChatTab
-          chatId={view.chatId}
-          chatIds={[view.chatId]}
-          gameIds={view.status === "active" ? [view.id] : []}
-          unread={await unreadIn(user.id, view.chatId)}
+      {/*
+        The side tabs: the group's chat, and the standings while the game is on (a finished
+        game shows its final standings on the page). Not in the middle of a song (that
+        screen is PlayRound alone).
+      */}
+      {(view.chatId || view.status === "active") && !(view.status === "active" && view.next?.my.startedAt) && (
+        <SideTabs
+          chat={
+            view.chatId
+              ? {
+                  chatId: view.chatId,
+                  chatIds: [view.chatId],
+                  gameIds: view.status === "active" ? [view.id] : [],
+                  unread: await unreadIn(user.id, view.chatId),
+                }
+              : undefined
+          }
+          podium={
+            view.status === "active"
+              ? {
+                  label: "Standings",
+                  title: "Standings so far",
+                  subtitle: view.label,
+                  content: (
+                    <Standings
+                      gameId={view.id}
+                      me={user.id}
+                      standings={view.standings}
+                      songs={view.songs}
+                      played={{ songCount: view.songCount }}
+                      bare
+                    />
+                  ),
+                }
+              : undefined
+          }
         />
       )}
     </main>
@@ -149,17 +178,6 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
         <Waiting gameId={view.id} me={userId} waitingOn={view.waitingOn} roundLength={view.roundLength} note={view.waitingNote} />
       )}
 
-      {/* Tap a name for that player's song-by-song history (songs I've answered only). */}
-      {view.standings.some((s) => s.played > 0) && (
-        <Standings
-          gameId={view.id}
-          me={userId}
-          standings={view.standings}
-          songs={view.songs}
-          title="Standings so far"
-          played={{ songCount: view.songCount }}
-        />
-      )}
     </div>
   );
 }
