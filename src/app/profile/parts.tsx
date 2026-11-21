@@ -58,8 +58,9 @@ export function percentRight(p: Pick<Profile, "answered" | "right">): string | n
 function pastGameLines(game: PastGame) {
   return {
     title: `${day(game.date)} · ${MODES[game.mode].name}`,
-    detail:
-      game.status === "cancelled"
+    detail: game.out
+      ? `Left after ${game.played} of ${game.songCount} songs`
+      : game.status === "cancelled"
         ? `Ended early after ${game.completed} of ${game.songCount} songs`
         : `${game.songCount} songs · ${companyText(game.others)}`,
   };
@@ -71,8 +72,9 @@ function pastGameLines(game: PastGame) {
  */
 export function PastGameRow({ game }: { game: PastGame }) {
   const ended = game.status === "cancelled";
-  const solo = game.players === 1;
-  const badge = ended ? "End" : solo ? "Solo" : ordinal(game.place);
+  // Played alone (nobody else, or everyone else out): never a win.
+  const solo = !game.out && game.playersIn === 1;
+  const badge = game.out ? "Out" : ended ? "End" : solo ? "Solo" : ordinal(game.place);
   const { title, detail } = pastGameLines(game);
   return (
     <li>
@@ -85,7 +87,7 @@ export function PastGameRow({ game }: { game: PastGame }) {
           className={`flex size-9 shrink-0 items-center justify-center rounded-full font-extrabold ${
             game.won
               ? "bg-accent text-[13px] text-accent-ink"
-              : ended || solo
+              : ended || solo || game.out
                 ? "bg-surface-2 text-[11px] text-muted"
                 : "bg-surface-2 text-[13px]"
           }`}

@@ -78,6 +78,13 @@
       "when": 1795257910624,
       "tag": "0010_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795294204602,
+      "tag": "0011_play_on_vote",
+      "breakpoints": true
     }
   ]
 }

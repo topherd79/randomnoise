@@ -5,7 +5,7 @@ import { gameProgress } from "@/lib/admin-games";
 import { loadGameResults } from "@/lib/game-view";
 import { ResultsGrid } from "../ResultsGrid";
 import { formatPoints } from "@/lib/rules";
-import { GameControls, ResetButton } from "./GameControls";
+import { GameControls, ResetButton, TakeOutButton } from "./GameControls";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { MODES } from "@/lib/modes";
 
@@ -73,14 +73,20 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
             <h2 className="text-lg font-bold">{several ? "Open songs" : "This song"}</h2>
             <p className="mt-1 text-sm text-muted">
               If someone&apos;s attempt went wrong by accident (a phone call, a crash), reset it and they can play the
-              song again from the start.{several && " Reset clears the song they're on, or their latest answer."}
+              song again from the start.{several && " Reset clears the song they're on, or their latest answer."} Take
+              someone out and the game goes on without them: it never waits on them again, and they stay in its
+              results, crossed out.
             </p>
             <ul className="mt-4 divide-y divide-line overflow-hidden rounded-2xl border border-line">
               {players.map((p) => (
                 <li key={p.userId} className="flex flex-wrap items-center gap-4 px-4 py-3">
-                  <span className="w-32 font-semibold">{p.name}</span>
+                  <span className={`w-32 font-semibold ${p.out ? "text-muted line-through" : ""}`}>{p.name}</span>
                   <span className="flex-1 text-sm text-muted">
-                    {p.state === "answered"
+                    {p.out
+                      ? p.out === "vote"
+                        ? "Out: everyone else voted to play on without them"
+                        : "Out: you took them out"
+                      : p.state === "answered"
                       ? several
                         ? `Played all ${roundLength}`
                         : "Answered"
@@ -93,6 +99,7 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
                   {p.resetGameSongId && (
                     <ResetButton gameId={game.id} gameSongId={p.resetGameSongId} userId={p.userId} name={p.name} />
                   )}
+                  {!p.out && <TakeOutButton gameId={game.id} userId={p.userId} name={p.name} />}
                 </li>
               ))}
             </ul>
@@ -112,9 +119,9 @@ export default async function AdminGamePage(props: PageProps<"/admin/games/[id]"
             <h2 className="text-lg font-bold">Standings</h2>
             <ol className="mt-3 divide-y divide-line overflow-hidden rounded-2xl border border-line">
               {standings.map((s, i) => (
-                <li key={s.userId} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                  <span className="w-5 text-muted">{i + 1}</span>
-                  <span className="flex-1 font-semibold">{s.name}</span>
+                <li key={s.userId} className={`flex items-center gap-3 px-4 py-2.5 text-sm ${s.out ? "opacity-45" : ""}`}>
+                  <span className="w-5 text-muted">{s.out ? "–" : i + 1}</span>
+                  <span className={`flex-1 font-semibold ${s.out ? "line-through" : ""}`}>{s.name}</span>
                   <span className="text-muted">{s.correct} right</span>
                   <span className="w-14 text-right font-bold tabular-nums">{formatPoints(s.points)}</span>
                 </li>

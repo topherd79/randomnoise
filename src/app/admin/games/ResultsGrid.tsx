@@ -30,9 +30,10 @@ export function ResultsGrid({ results }: { results: GameResults }) {
           <tr>
             <th className="px-4 py-3 font-semibold">Song</th>
             {players.map((p, i) => (
-              <th key={p.userId} className="px-3 py-3 font-semibold">
-                <span className="block normal-case tracking-normal text-sm text-ink">
-                  {i + 1}. {p.name}
+              <th key={p.userId} className={`px-3 py-3 font-semibold ${p.out ? "opacity-45" : ""}`}>
+                {/* Out of the game: no place, crossed out. */}
+                <span className={`block normal-case tracking-normal text-sm text-ink ${p.out ? "line-through" : ""}`}>
+                  {p.out ? "–" : `${i + 1}.`} {p.name}
                 </span>
                 <span className="block normal-case tracking-normal">
                   {formatPoints(p.points)} pts · {p.correct} right
@@ -70,7 +71,7 @@ export function ResultsGrid({ results }: { results: GameResults }) {
                 if (pick.label === null) {
                   return (
                     <td key={p.userId} className="px-3 py-3 text-muted">
-                      No answer
+                      {pick.out ? <span className="opacity-45">–</span> : "No answer"}
                     </td>
                   );
                 }

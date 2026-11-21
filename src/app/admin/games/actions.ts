@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { CLIP_LENGTHS } from "@/lib/clips";
 import { cancelGame, createGame, resetAttempt } from "@/lib/games";
+import { takeOutOfGame } from "@/lib/play-on-game";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@/lib/rules";
 import { ALL_LENGTHS, GAME_MODES, MODES } from "@/lib/modes";
 import { AUX_MIN_PLAYERS, auxSongCount } from "@/lib/aux";
@@ -70,6 +71,15 @@ export async function resetAttemptAction(gameId: string, gameSongId: string, use
   const r = await resetAttempt(String(gameSongId), String(userId));
   revalidatePath(`/admin/games/${gameId}`);
   return r.ok ? { ok: true, message: "Reset. They can play this song again from the start." } : { ok: false, message: r.error };
+}
+
+/** Take a player out of a game in progress: it goes on without them, and they stay in its results, crossed out. */
+export async function takeOutAction(gameId: string, userId: string): Promise<FormResult> {
+  await requireAdmin();
+  const r = await takeOutOfGame(String(gameId), String(userId), "admin");
+  revalidatePath("/admin/games");
+  revalidatePath(`/admin/games/${gameId}`);
+  return r.ok ? { ok: true, message: "Taken out. The game goes on without them." } : { ok: false, message: r.error };
 }
 
 export async function endGameAction(gameId: string): Promise<void> {

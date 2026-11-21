@@ -50,28 +50,34 @@ function pointsText(points: number | null) {
   return points > 0 ? `+${formatPoints(points)}` : formatPoints(points);
 }
 
-/** Everyone's picks for one song; players who haven't answered it yet show as "not played yet". */
+/**
+ * Everyone's picks for one song; players who haven't answered it yet show as
+ * "not played yet". A player who's out is crossed out and grayed at the bottom:
+ * their pick if they'd answered this song, otherwise a blank line.
+ */
 export function PicksList({ picks }: { picks: Pick[] }) {
   return (
     <ul className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
       {picks.map((p) => (
-        <li key={p.userId} className="flex items-center gap-3 px-4 py-3">
+        <li key={p.userId} className={`flex items-center gap-3 px-4 py-3 ${p.out ? "opacity-45" : ""}`}>
           <span
             className={`flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
               p.correct ? "bg-accent text-accent-ink" : p.label ? "bg-danger/20 text-danger" : "bg-surface-2 text-muted"
             }`}
-            aria-label={p.correct ? "right" : p.label ? "wrong" : p.pending ? "not played yet" : "no answer"}
+            aria-label={p.correct ? "right" : p.label ? "wrong" : p.out ? "out of the game" : p.pending ? "not played yet" : "no answer"}
           >
             {p.correct ? "✓" : p.label ? "✕" : "–"}
           </span>
           <span className="min-w-0 flex-1">
-            <span className={`block font-semibold ${p.pending ? "text-muted" : ""}`}>{p.name}</span>
-            <span className="block truncate text-sm text-muted">
-              {p.pending ? "Not played yet" : (p.label ?? "No answer")}
-              {p.elapsedMs !== null && ` · ${formatSeconds(p.elapsedMs)}`}
-            </span>
+            <span className={`block font-semibold ${p.pending ? "text-muted" : ""} ${p.out ? "line-through" : ""}`}>{p.name}</span>
+            {!(p.out && p.label === null) && (
+              <span className="block truncate text-sm text-muted">
+                {p.pending ? "Not played yet" : (p.label ?? "No answer")}
+                {p.elapsedMs !== null && ` · ${formatSeconds(p.elapsedMs)}`}
+              </span>
+            )}
           </span>
-          {!p.pending && (
+          {!p.pending && !(p.out && p.label === null) && (
             <span className={`font-bold tabular-nums ${p.points && p.points > 0 ? "text-accent" : p.points && p.points < 0 ? "text-danger" : "text-muted"}`}>
               {pointsText(p.points)}
             </span>

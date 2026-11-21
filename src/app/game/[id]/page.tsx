@@ -7,6 +7,7 @@ import { unreadIn } from "@/lib/chat";
 import { SideTabs } from "@/components/SideTabs";
 import { formatPoints, formatSeconds } from "@/lib/rules";
 import { waitingOnYouText } from "@/lib/modes";
+import { outNotice, wentOnText } from "@/lib/play-on";
 import { Logo } from "@/components/Logo";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { PlayRound } from "./PlayRound";
@@ -43,6 +44,33 @@ export default async function GamePage(props: PageProps<"/game/[id]">) {
     }
     // It just ended: show the results.
     if (state) return GamePage(props);
+  }
+
+  // The game went on without me: no more songs, just what happened (and the group's chat).
+  if (view.status === "active" && view.iAmOut) {
+    const mine = view.out.find((o) => o.userId === user.id);
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(env(safe-area-inset-top),1.25rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)]">
+        <header>
+          <Link href="/" aria-label="Home">
+            <Logo />
+          </Link>
+        </header>
+        <section className="flex flex-1 flex-col justify-center py-10">
+          <h1 className="text-3xl font-bold leading-tight">This game went on without you.</h1>
+          <p className="mt-4 text-lg leading-relaxed text-muted">
+            {wentOnText(mine?.by ?? "vote", view.standings.filter((s) => !s.out).map((s) => s.name))} You stay in its results,
+            crossed out, with the points you had. Once it&apos;s over, it&apos;s in your past games.
+          </p>
+          <Link href="/" className="mt-8 rounded-full bg-surface-2 py-3 text-center font-semibold text-ink">
+            Home
+          </Link>
+        </section>
+        {view.chatId && (
+          <SideTabs chat={{ chatId: view.chatId, chatIds: [view.chatId], gameIds: [view.id], unread: await unreadIn(user.id, view.chatId) }} />
+        )}
+      </main>
+    );
   }
 
   return (
@@ -123,16 +151,20 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
   // Everyone else has played every open song: say so to the one they're waiting on.
   const leftOf = (uid: string) => view.waitingOn.find((w) => w.userId === uid)?.left ?? 0;
   const waitingOnYou = waitingOnYouText(
-    view.players.filter((p) => p.userId !== userId).map((p) => ({ name: p.name, left: leftOf(p.userId) })),
+    view.players
+      .filter((p) => p.userId !== userId && !view.out.some((o) => o.userId === p.userId))
+      .map((p) => ({ name: p.name, left: leftOf(p.userId) })),
     leftOf(userId),
   );
   // The song I just answered gets the big "how you did"; a song from a round
   // that's already over is just its results.
   const justPlayed = latest && latest.position >= view.roundStart;
+  const notice = outNotice(view.out, view.standings.filter((s) => !s.out).length);
   return (
     <div className="flex flex-1 flex-col gap-8 pt-6">
       {/* Waiting on others: updates by itself as they answer and when the next songs open. */}
       {!next && <LiveRefresh gameIds={[view.id]} />}
+      {notice && <p className="-mb-4 rounded-2xl bg-surface px-4 py-3 text-[15px] text-muted">{notice}</p>}
 
       {latest && justPlayed ? (
         <section className="flex flex-col gap-4">
@@ -176,7 +208,15 @@ function ActiveGame({ view, userId }: { view: GameView; userId: string }) {
           />
         </div>
       ) : (
-        <Waiting gameId={view.id} me={userId} waitingOn={view.waitingOn} roundLength={view.roundLength} note={view.waitingNote} />
+        <Waiting
+          gameId={view.id}
+          me={userId}
+          waitingOn={view.waitingOn}
+          roundLength={view.roundLength}
+          note={view.waitingNote}
+          playOn={view.playOn}
+          afterOut={view.afterOut}
+        />
       )}
 
     </div>

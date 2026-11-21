@@ -8,8 +8,10 @@ import { Standings } from "./Standings";
  * On the game page, and inside the past-games panel (`compact`).
  */
 export function Final({ view, me, compact = false }: { view: GameView; me: string; compact?: boolean }) {
-  const top = view.standings[0];
-  const winners = view.standings.filter((s) => s.points === top?.points);
+  // Anyone out of the game has no place (they're at the bottom, crossed out).
+  const placed = view.standings.filter((s) => !s.out);
+  const top = placed[0];
+  const winners = placed.filter((s) => s.points === top?.points);
   return (
     <>
       <section>

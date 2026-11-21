@@ -203,13 +203,17 @@ export async function createGame(opts: {
 // Playing
 // ---------------------------------------------------------------------------
 
-/** A game song, if the player is in its game. */
+/** Joins a game to one player who's still in it (not out: see play-on-game.ts). */
+const stillIn = (userId: string) =>
+  and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, userId), isNull(gamePlayers.outAt));
+
+/** A game song, if the player is (still) in its game. */
 async function playableRound(userId: string, gameSongId: string) {
   const [row] = await db
     .select({ gs: gameSongs, game: games })
     .from(gameSongs)
     .innerJoin(games, eq(games.id, gameSongs.gameId))
-    .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, userId)))
+    .innerJoin(gamePlayers, stillIn(userId))
     .where(eq(gameSongs.id, gameSongId))
     .limit(1);
   if (!row) return null;
@@ -249,7 +253,7 @@ export async function mayPlayClip(userId: string, clipFile: string): Promise<boo
     .select({ position: gameSongs.position, game: games })
     .from(gameSongs)
     .innerJoin(games, eq(games.id, gameSongs.gameId))
-    .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, userId)))
+    .innerJoin(gamePlayers, stillIn(userId))
     .where(eq(gameSongs.clipFile, clipFile))
     .limit(1);
   if (!row) return false;
@@ -371,9 +375,9 @@ export async function answerSong(
 }
 
 /**
- * When every player has answered a song: mark it complete (once, even if two
- * answers land together), delete its clip, and move the game on if that
- * finished the round.
+ * When every player still in the game has answered a song: mark it complete
+ * (once, even if two answers land together), delete its clip, and move the game
+ * on if that finished the round.
  */
 export async function completeSongIfDone(gameSongId: string): Promise<void> {
   const [row] = await db
@@ -388,11 +392,14 @@ export async function completeSongIfDone(gameSongId: string): Promise<void> {
   if (game.mode === "aux") return;
 
   const [[{ players }], [{ answered }]] = await Promise.all([
-    db.select({ players: count() }).from(gamePlayers).where(eq(gamePlayers.gameId, game.id)),
+    db
+      .select({ players: count() })
+      .from(gamePlayers)
+      .where(and(eq(gamePlayers.gameId, game.id), isNull(gamePlayers.outAt))),
     db
       .select({ answered: count() })
       .from(answers)
-      .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, game.id), eq(gamePlayers.userId, answers.userId)))
+      .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, game.id), eq(gamePlayers.userId, answers.userId), isNull(gamePlayers.outAt)))
       .where(and(eq(answers.gameSongId, gs.id), isNotNull(answers.answeredAt))),
   ]);
   if (players === 0 || answered < players) return;
@@ -443,20 +450,22 @@ async function advanceIfRoundDone(gameId: string): Promise<void> {
  * with how many songs they've played. Totals don't reveal which songs anyone
  * got right, so they're shown to everyone in the game, even mid-round (in All
  * songs mode, players who've finished see their full score straight away).
+ * A player who's out stays in, at the bottom, with the points they had.
  */
 export async function standings(gameId: string) {
-  const rows = await db.execute<{ user_id: string; name: string; points: string; correct: string; played: string }>(sql`
+  const rows = await db.execute<{ user_id: string; name: string; points: string; correct: string; played: string; out: boolean }>(sql`
     select u.id as user_id, u.name,
       coalesce(sum(a.points) filter (where a.answered_at is not null), 0) as points,
       count(a.id) filter (where a.answered_at is not null and a.correct) as correct,
-      count(a.id) filter (where a.answered_at is not null) as played
+      count(a.id) filter (where a.answered_at is not null) as played,
+      gp.out_at is not null as out
     from game_players gp
     join users u on u.id = gp.user_id
     left join game_songs gs on gs.game_id = gp.game_id
     left join answers a on a.game_song_id = gs.id and a.user_id = gp.user_id
     where gp.game_id = ${gameId}
-    group by u.id, u.name
-    order by points desc, u.name asc
+    group by u.id, u.name, gp.out_at
+    order by out asc, points desc, u.name asc
   `);
   return rows.rows.map((r) => ({
     userId: r.user_id,
@@ -465,6 +474,8 @@ export async function standings(gameId: string) {
     correct: Number(r.correct),
     /** Songs this player has answered (all of them count in their points). */
     played: Number(r.played),
+    /** Out of the game (everyone else played on without them): crossed out, no place. */
+    out: Boolean(r.out),
   }));
 }
 
@@ -481,7 +492,7 @@ export async function nudge(fromUserId: string, gameId: string, toUserId: string
   const [row] = await db
     .select({ game: games })
     .from(games)
-    .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, fromUserId)))
+    .innerJoin(gamePlayers, stillIn(fromUserId))
     .where(eq(games.id, gameId))
     .limit(1);
   if (!row) return { ok: false, error: "That isn't your game." };
@@ -493,7 +504,7 @@ export async function nudge(fromUserId: string, gameId: string, toUserId: string
     .select({ name: users.name, email: users.email })
     .from(gamePlayers)
     .innerJoin(users, eq(users.id, gamePlayers.userId))
-    .where(and(eq(gamePlayers.gameId, game.id), eq(gamePlayers.userId, toUserId)))
+    .where(and(eq(gamePlayers.gameId, game.id), eq(gamePlayers.userId, toUserId), isNull(gamePlayers.outAt)))
     .limit(1);
   if (!target) return { ok: false, error: "They aren't in this game." };
   const { round, answered } = await roundState(game);
@@ -584,12 +595,15 @@ export async function cancelGame(gameId: string): Promise<void> {
   await publishGameUpdate(gameId);
 }
 
-/** After a player is removed, the songs they were holding up can move on. */
+/** After a player is removed (or taken out), the songs they were holding up can move on. */
 export async function afterPlayerRemoved(gameIds: string[]): Promise<void> {
   for (const gameId of gameIds) {
     const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
     if (!game || game.status !== "active") continue;
-    const [{ players }] = await db.select({ players: count() }).from(gamePlayers).where(eq(gamePlayers.gameId, gameId));
+    const [{ players }] = await db
+      .select({ players: count() })
+      .from(gamePlayers)
+      .where(and(eq(gamePlayers.gameId, gameId), isNull(gamePlayers.outAt)));
     if (players === 0) {
       await cancelGame(gameId);
       continue;
@@ -617,7 +631,7 @@ export async function afterPlayerRemoved(gameIds: string[]): Promise<void> {
 
 type GameEmail = { kind: "start" } | { kind: "over" };
 
-/** Email every player in a game, each with their own login button to the game. */
+/** Email every player in a game (not those who are out), each with their own login button to the game. */
 export async function emailPlayers(gameId: string, what: GameEmail): Promise<void> {
   try {
     const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
@@ -626,7 +640,7 @@ export async function emailPlayers(gameId: string, what: GameEmail): Promise<voi
       .select({ id: users.id, name: users.name, email: users.email, turnOrder: gamePlayers.turnOrder })
       .from(gamePlayers)
       .innerJoin(users, eq(users.id, gamePlayers.userId))
-      .where(eq(gamePlayers.gameId, gameId));
+      .where(and(eq(gamePlayers.gameId, gameId), isNull(gamePlayers.outAt)));
     // game-view imports from this module, so load it lazily to avoid a cycle.
     const results =
       what.kind === "over" ? (await (await import("./game-view")).loadGameResults([gameId])).get(gameId) : undefined;

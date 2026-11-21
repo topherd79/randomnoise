@@ -37,6 +37,12 @@ and games from a desktop browser.
   everyone has played every open song. The podium tab on the right edge (under the chat tab) slides in
   the standings: everyone's points so far; tap a name for that player's song-by-song history. Pages update by themselves as others play. When everyone else is
   done, the last player sees who's waiting on them.
+- **Playing on without someone:** when everyone but one player has played every open song, 4 hours
+  after the last of them finished (10 hours in a game of two, where the other player decides alone),
+  the others can vote to play on without them. It takes everyone else's vote, a vote can't be taken
+  back, and the player isn't told. They're out: the game goes on and never waits on them again, and
+  they stay in its results crossed out, with the points they had. The admin can take anyone out of a
+  game at any time. Not in Pass the Aux.
 - **Pass the Aux:** for when everyone is in the same room. The game opens a lobby with a random turn
   order ("You're player 2"); everyone taps I'm in, and player 1 taps Start (30 seconds after the last
   I'm in, they can start without anyone missing). Players take turns: only the turn player's phone

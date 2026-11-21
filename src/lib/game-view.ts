@@ -1,12 +1,14 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { answers, gamePlayers, gameSongs, games, songs, users, type Choice, type GameMode, type SongSnapshot } from "@/db/schema";
 import { appleMusicLink, spotifyLink } from "./links";
 import { choiceLabel, shuffleFor } from "./rules";
 import { roundState, standings, type Standing } from "./games";
-import { inRound, nextPosition, openRound, roundLabel, songsLeft, waitingNote, waitingOnYouText } from "./modes";
+import { inRound, nextPosition, openRound, roundLabel, roundSize, songsLeft, waitingNote, waitingOnYouText } from "./modes";
 import { auxSummary } from "./aux-game";
+import { loadPlayOn } from "./play-on-game";
+import { afterOutText, playOnHomeText, type PlayOnView } from "./play-on";
 
 export type SongInfo = {
   title: string;
@@ -38,6 +40,8 @@ export type Pick = {
   elapsedMs: number | null;
   /** Hasn't answered this song yet (the game is still on): shown as "not played yet". */
   pending?: boolean;
+  /** Out of the game: crossed out and grayed, with their pick if they'd answered this song, else blank. */
+  out?: boolean;
 };
 
 /** A song the player can play now: their next one in the open round. */
@@ -91,6 +95,14 @@ export type GameView = {
   standings: Standing[];
   /** How many songs every player has answered. */
   completedCount: number;
+  /** I'm out of this game (everyone else played on without me): no more songs for me. */
+  iAmOut: boolean;
+  /** Players who are out, and how (for "You all voted to play on without Dave."). */
+  out: { userId: string; name: string; by: "vote" | "admin" }[];
+  /** A vote to play on without the one player holding the game up, as I see it (null: none). */
+  playOn: PlayOnView | null;
+  /** What opens once that player is out: "songs 7–9 open for the rest of you". */
+  afterOut: string;
 };
 
 /** What players see about a song, from the game's snapshot (not the live catalog). */
@@ -125,7 +137,7 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
 
   const [players, rounds, table] = await Promise.all([
     db
-      .select({ userId: users.id, name: users.name })
+      .select({ userId: users.id, name: users.name, outAt: gamePlayers.outAt, outBy: gamePlayers.outBy })
       .from(gamePlayers)
       .innerJoin(users, eq(users.id, gamePlayers.userId))
       .where(eq(gamePlayers.gameId, gameId))
@@ -149,15 +161,20 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
   const answerOf = (gameSongId: string, uid: string) => allAnswers.find((a) => a.gameSongId === gameSongId && a.userId === uid);
   const answeredBy = (gameSongId: string, uid: string) => Boolean(answerOf(gameSongId, uid)?.answeredAt);
   const active = g.status === "active";
+  const isOut = (uid: string) => Boolean(players.find((p) => p.userId === uid)?.outAt);
+  const iAmOut = isOut(userId);
+  const playing = players.filter((p) => !p.outAt);
 
   // Callers only pass songs this player may see the picks for.
   const resultsFor = (r: (typeof rounds)[number]): ResultsView => {
     const labelOf = new Map(r.gs.choices.map((c: Choice) => [c.songId, choiceLabel(c)]));
     let picks: Pick[] = players.map((p) => {
       const a = answerOf(r.gs.id, p.userId);
+      const out = p.outAt ? { out: true } : {};
       if (!a?.answeredAt) {
-        const pending = active && !r.gs.completedAt;
-        return { userId: p.userId, name: p.name, label: null, correct: null, points: null, elapsedMs: null, pending };
+        // Out of the game: a blank, crossed-out line (never "not played yet").
+        const pending = !p.outAt && active && !r.gs.completedAt;
+        return { userId: p.userId, name: p.name, label: null, correct: null, points: null, elapsedMs: null, pending, ...out };
       }
       return {
         userId: p.userId,
@@ -166,12 +183,15 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
         correct: a.correct,
         points: a.points,
         elapsedMs: a.elapsedMs,
+        ...out,
       };
     });
     // Pass the Aux: each song is one player's turn, so only they have a pick.
     if (g.mode === "aux") picks = picks.filter((p) => answerOf(r.gs.id, p.userId)?.answeredAt);
+    // Players who are out at the bottom, then not played yet, then by points.
     picks.sort(
       (x, y) =>
+        Number(Boolean(x.out)) - Number(Boolean(y.out)) ||
         Number(Boolean(x.pending)) - Number(Boolean(y.pending)) ||
         (y.points ?? -Infinity) - (x.points ?? -Infinity) ||
         x.name.localeCompare(y.name),
@@ -188,7 +208,8 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
   let mySongs: ResultsView[] = [];
   let waitingOn: Waiter[] = [];
   if (active) {
-    const nextPos = nextPosition(round, answeredInRound(userId));
+    // Out of the game: no next song (the page says the game went on without them).
+    const nextPos = iAmOut ? null : nextPosition(round, answeredInRound(userId));
     const nextRow = nextPos === null ? undefined : rounds.find((r) => r.gs.position === nextPos);
     if (nextRow) {
       const mine = answerOf(nextRow.gs.id, userId);
@@ -227,10 +248,11 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
       };
     }
     mySongs = mineDone.map(resultsFor);
-    waitingOn = players
+    waitingOn = playing
       .map((p) => ({ userId: p.userId, name: p.name, left: songsLeft(round, answeredInRound(p.userId)) }))
       .filter((w) => w.left > 0);
   }
+  const playOn = active && !iAmOut ? await loadPlayOn(g, userId) : null;
 
   const completed = rounds.filter((r) => r.gs.completedAt);
   const history = completed.map(resultsFor).reverse();
@@ -243,7 +265,8 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
     label: roundLabel(g.mode, g.songCount, round),
     roundStart: round.start,
     roundLength: round.end - round.start + 1,
-    players,
+    // (no dates: the past-games panel gets this view as JSON)
+    players: players.map((p) => ({ userId: p.userId, name: p.name })),
     next,
     latest,
     songs: active ? mySongs : history,
@@ -252,6 +275,10 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
     history,
     standings: table,
     completedCount: completed.length,
+    iAmOut,
+    out: players.filter((p) => p.outAt).map((p) => ({ userId: p.userId, name: p.name, by: p.outBy ?? "admin" })),
+    playOn,
+    afterOut: afterOutText(round, roundSize(g.mode, g.songCount), g.songCount),
   };
 }
 
@@ -269,7 +296,8 @@ export async function myGames(userId: string) {
   const rows = await db
     .select({ game: games })
     .from(games)
-    .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, userId)))
+    // A game that went on without me is off my home screen.
+    .innerJoin(gamePlayers, and(eq(gamePlayers.gameId, games.id), eq(gamePlayers.userId, userId), isNull(gamePlayers.outAt)))
     .where(eq(games.status, "active"))
     .orderBy(desc(games.createdAt))
     .limit(20);
@@ -278,14 +306,15 @@ export async function myGames(userId: string) {
   const states = await Promise.all(
     active.map(async (g) => {
       const aux = g.mode === "aux" ? await auxSummary(g.id, userId) : null;
-      const [{ round, answered }, players] = await Promise.all([
+      const [{ round, answered }, players, playOn] = await Promise.all([
         roundState(g),
         db
           .select({ userId: users.id, name: users.name })
           .from(gamePlayers)
           .innerJoin(users, eq(users.id, gamePlayers.userId))
-          .where(eq(gamePlayers.gameId, g.id))
+          .where(and(eq(gamePlayers.gameId, g.id), isNull(gamePlayers.outAt)))
           .orderBy(asc(users.name)),
+        loadPlayOn(g, userId),
       ]);
       const next = nextPosition(round, answered(userId));
       // Other players and their songs left (by id: two players could share a name).
@@ -307,6 +336,8 @@ export async function myGames(userId: string) {
         /** "Sarah and Topher are waiting on you." once everyone else is done; null otherwise. */
         waitingOnYou: waitingOnYouText(others, songsLeft(round, answered(userId))),
         others: others.map((o) => o.name),
+        /** "Mike voted to play on without Dave. Your vote?" for someone who votes; null otherwise. */
+        playOn: playOnHomeText(playOn),
       };
     }),
   );
@@ -345,7 +376,7 @@ export async function loadGameResults(gameIds: string[]): Promise<Map<string, Ga
   const [gameRows, playerRows, rounds] = await Promise.all([
     db.select().from(games).where(inArray(games.id, gameIds)),
     db
-      .select({ gameId: gamePlayers.gameId, userId: users.id, name: users.name })
+      .select({ gameId: gamePlayers.gameId, userId: users.id, name: users.name, outAt: gamePlayers.outAt })
       .from(gamePlayers)
       .innerJoin(users, eq(users.id, gamePlayers.userId))
       .where(inArray(gamePlayers.gameId, gameIds)),
@@ -384,6 +415,7 @@ export async function loadGameResults(gameIds: string[]): Promise<Map<string, Ga
           correct: a?.correct ?? null,
           points: a?.points ?? null,
           elapsedMs: a?.elapsedMs ?? null,
+          ...(p.outAt ? { out: true } : {}),
         };
       });
       const { fullUrl: _full, ...info } = songInfo(r.gs.song, r.gs.id, false);
@@ -391,10 +423,10 @@ export async function loadGameResults(gameIds: string[]): Promise<Map<string, Ga
       return { ...info, position: r.gs.position, picks };
     });
 
-    // Same order as the standings() query: most points, then name.
+    // Same order as the standings() query: players who are out last, then most points, then name.
     const table: Standing[] = players
-      .map((p) => ({ userId: p.userId, name: p.name, ...totals.get(p.userId)! }))
-      .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+      .map((p) => ({ userId: p.userId, name: p.name, ...totals.get(p.userId)!, out: Boolean(p.outAt) }))
+      .sort((a, b) => Number(a.out) - Number(b.out) || b.points - a.points || a.name.localeCompare(b.name));
 
     out.set(g.id, {
       id: g.id,
