@@ -7,7 +7,10 @@
 //   page was scrolled, so nothing visibly moves), and put back on close;
 // - a drag anywhere but inside one of the panel's scrolling lists
 //   (`data-panel-scroll`) does nothing, and so does a drag that would push a list
-//   past its top or bottom (that's when Safari would move the page instead).
+//   past its top or bottom (that's when Safari would move the page instead);
+// - in the message box, a drag that starts moving straight away does nothing
+//   too; one that starts with the finger held still is moving the cursor (the
+//   magnifier), and is left alone.
 // Pure logic first so it can be unit tested.
 
 export type ScrollBox = { scrollTop: number; scrollHeight: number; clientHeight: number };
@@ -22,6 +25,14 @@ export function blocksDrag(box: ScrollBox, dy: number): boolean {
   const atTop = box.scrollTop <= 0;
   const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
   return dy > 0 ? atTop : atBottom;
+}
+
+/** How long a finger rests on the message box before moving for it to be moving the cursor, not dragging. */
+export const CURSOR_HOLD_MS = 300;
+
+/** A touch in the message box that held still this long before moving: moving the cursor, not the page. */
+export function movesCursor(heldMs: number): boolean {
+  return heldMs >= CURSOR_HOLD_MS;
 }
 
 /** Marks a panel's scrolling list: drags inside it scroll it. */
@@ -50,8 +61,13 @@ export function lockPageScroll(): () => void {
   root.style.overscrollBehavior = "none";
 
   let lastY = 0;
+  let startedAt = 0;
+  /** In the message box, decided on a touch's first move and kept for the rest of it. */
+  let cursor: boolean | null = null;
   const onStart = (e: TouchEvent) => {
     lastY = e.touches[0]?.clientY ?? 0;
+    startedAt = e.timeStamp;
+    cursor = null;
   };
   const onMove = (e: TouchEvent) => {
     // Two fingers: a pinch to zoom, left alone.
@@ -60,8 +76,11 @@ export function lockPageScroll(): () => void {
     const dy = y1 - lastY;
     lastY = y1;
     const target = e.target instanceof Element ? e.target : null;
-    // Pressing in the message box moves its cursor; that's not a page drag.
-    if (target?.closest("input, textarea")) return;
+    if (target?.closest("input, textarea")) {
+      cursor ??= movesCursor(e.timeStamp - startedAt);
+      if (!cursor) e.preventDefault();
+      return;
+    }
     const list = target?.closest<HTMLElement>("[data-panel-scroll]");
     if (!list || blocksDrag(list, dy)) e.preventDefault();
   };

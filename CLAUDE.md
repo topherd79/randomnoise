@@ -94,8 +94,9 @@ in progress.
 - **The page behind an open panel holds still** (`lockPageScroll`, `src/lib/scroll-lock.ts`): `overflow:
   hidden` isn't enough on an iPhone, where with the keyboard up a drag moves the whole visible area. So the
   body is pinned (`position: fixed`, shifted by the scroll, put back on close) and a drag is stopped unless
-  it's inside a panel list marked `data-panel-scroll` that can still scroll that way (`blocksDrag`); a
-  press in the message box is left alone (it moves the cursor). New scrolling lists in a panel need the mark.
+  it's inside a panel list marked `data-panel-scroll` that can still scroll that way (`blocksDrag`). In
+  the message box a drag that moves at once is stopped too; one held still first (`CURSOR_HOLD_MS`,
+  `movesCursor`) is moving the cursor and is left alone. New scrolling lists in a panel need the mark.
 - **Nothing in a panel leaves it:** a past game and a name's profile button use `PanelLink`
   (`src/components/PanelNav.tsx`): inside a panel it opens the page in the panel, on top of what was
   there, with a back arrow naming the page under it; anywhere else it's an ordinary link. The pages
@@ -233,7 +234,7 @@ npm run typecheck && npm run lint && npm test && npm run build
 - Pure logic lives in modules without server-only imports so it can be unit tested: `rules.ts`,
   `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`,
   `modes.ts` (rounds per game mode), `aux.ts` (Pass the Aux turns and timings), `chat-rules.ts` (held-back
-  messages, reactions, time lines), `scroll-lock.ts` (`blocksDrag`), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
+  messages, reactions, time lines), `scroll-lock.ts` (`blocksDrag`, `movesCursor`), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
   worst genre and decade, placings).
 - **Artist limit:** a game has at most one song per artist for every five songs
   (`maxSongsPerArtist` in `src/lib/draw.ts`), except artists picked on the form; it never blocks a
