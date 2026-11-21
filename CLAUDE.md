@@ -218,11 +218,13 @@ in progress.
 - **Profiles** (`src/lib/profiles.ts`, numbers in `src/lib/profile-stats.ts`): `/profile` (your own, with
   past games at `/profile/games`) and `/players/[id]` (a friend's short version, `ProfileSummary`, reached
   from a name in a finished game's standings; in a side panel the same summary opens in the panel). Only games that are over count: finished games, plus the finished songs of games ended early
-  (which count toward the numbers but not as a game played or won). A game played alone is never a win.
+  (which count toward the numbers but not as a game played or won); a game that went on without them
+  counts the same way ("Out"). A game played alone, or finished alone, is never a win.
   Best and worst genre and decade go by average points a song, with at least 5 songs. Anyone you've played
   a game with can open your profile (`maySeeProfile`); the admin can open anyone's.
 - **Admin games:** the Games page shows the 5 most recent games; `/admin/games/all` lists every game with
   status, mode and player filters, 25 a page (`gameSummaries`, `countGames` in `src/lib/admin-games.ts`).
+  A game in progress has Reset attempt and Take out of game for each player, and End game.
 - **Admin screens never show the songs of a game in progress** (the admin plays too): see
   `src/lib/admin-games.ts`. Clips have random file names, are only served to players in that game
   and never ahead of that player's next song (`mayPlayClip`); the full song unlocks only after a

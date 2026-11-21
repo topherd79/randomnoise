@@ -61,9 +61,11 @@ and games from a desktop browser.
   panel leaves it: a past game's results, or a name's profile, open inside the panel with a back arrow.
 - **Profiles:** your profile (games, wins, % right, average answer time, top three guesses, best and
   worst genre and decade) and every past game; a friend's short profile from a name in the standings.
-  Only games that are over count.
+  Only games that are over count. A game that went on without you shows as "Out": its songs count, but
+  not as a game played or won.
 - **Admin games:** a game in progress shows progress only, never the songs, since the admin plays too.
-  The admin can reset a player's attempt or end a game early. The Games page shows the 5 most recent
+  The admin can reset a player's attempt, take a player out of a game, or end a game early. The Games
+  page shows the 5 most recent
   games, and All games lists every game with status, mode and player filters. A game that's over
   shows every song and pick.
 - **Emails:** invite, login link, game on, nudge, and game over (with every song's results).
