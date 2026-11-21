@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessageView, ChatSummary, ChatView } from "@/lib/chat";
-import { MAX_MESSAGE_LENGTH, REACTIONS, sparkleDots, sparkleWidth } from "@/lib/chat-rules";
+import { MAX_MESSAGE_LENGTH, REACTIONS, sparkleDots, sparkleWidth, stampBefore, stampText } from "@/lib/chat-rules";
 import { reportClientError } from "@/lib/client-errors";
 import { withTimeout } from "@/lib/timeout";
+import { PanelNavProvider, type PanelPage } from "./PanelNav";
+import { PanelPageView } from "./PanelPages";
 
 // The side tabs: two small tabs on the right edge, stacked with no gap. The
 // chat tab (on top) has the unread count in its bubble; the podium tab under
@@ -15,9 +17,14 @@ import { withTimeout } from "@/lib/timeout";
 // the page behind) and the panel slides back. Tabs and panels share one
 // see-through background; what's inside them stays solid.
 //
+// Nothing in a panel takes you to another page: a past game, or a name's
+// profile, opens in the panel with a back arrow (PanelLink).
+//
 // The chat keeps its own copy (fetch, never a page reload), updated live
 // through /api/live. Both tabs hide while a song is playing (PlayRound sends
 // "rn:song"). Held-back messages arrive without their words and show as sparkles.
+// The chat opens at its newest message and stays there (new messages, the
+// keyboard coming up) unless you've scrolled up to read.
 
 const REPLY_MS = 8_000;
 const POLL_MS = 30_000;
@@ -87,6 +94,9 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reactingOn, setReactingOn] = useState<string | null>(null);
+  /** Pages opened inside the podium panel (a past game, a profile), the one on top showing. */
+  const [pages, setPages] = useState<PanelPage[]>([]);
+  const aside = useRef<HTMLElement>(null);
   const viewRef = useRef(view);
   const openRef = useRef(false);
   useEffect(() => {
@@ -203,6 +213,8 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
   }, [isOpen]);
 
   function close() {
+    // A song from a past game stops when its panel slides away.
+    aside.current?.querySelectorAll("audio").forEach((a) => a.pause());
     setOpen(null);
     setReactingOn(null);
   }
@@ -214,11 +226,14 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
     setShown(which);
     setError(null);
     setReactingOn(null);
-    if (which !== "chat") return;
+    // The podium panel opens at its top (the standings, or your list of past games).
+    if (which === "podium") return setPages([]);
     openRef.current = true;
     const v = chatId ? ({ kind: "chat", id: chatId } as View) : view;
     setView(v);
     viewRef.current = v;
+    pin(true);
+    toBottom();
     if (v.kind === "chat") void loadChat(v.id, true).then(loadCounts);
     else void loadCounts();
   }
@@ -227,6 +242,7 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
     setChat(null);
     setView({ kind: "chat", id });
     viewRef.current = { kind: "chat", id };
+    pin(true);
     void loadChat(id, true).then(loadCounts);
   }
 
@@ -253,6 +269,7 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
     if (v.kind !== "chat" || !text.trim() || sending) return;
     setSending(true);
     setError(null);
+    pin(true);
     const ok = await post(v.id, { action: "send", text });
     setSending(false);
     if (ok) setText("");
@@ -264,18 +281,36 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
     if (v.kind === "chat") void post(v.id, { action: "react", messageId, kind });
   }
 
-  // Keep the newest message in view: on opening a chat, and when one arrives while you're near the bottom.
+  // Keep the newest message in view while you're at the bottom: when it opens, when a message comes
+  // in, and when the panel gets shorter (the keyboard coming up). Scroll up to read and it stays put.
   const scroller = useRef<HTMLDivElement>(null);
-  const lastSeen = useRef<string | null>(null);
+  const pinnedRef = useRef(true);
+  const chatShown = !hidden && shown === "chat" && view.kind === "chat";
+  useEffect(() => {
+    const el = scroller.current;
+    if (!chatShown || !el || typeof ResizeObserver === "undefined") return;
+    const resized = new ResizeObserver(() => {
+      if (pinnedRef.current) el.scrollTop = el.scrollHeight;
+    });
+    resized.observe(el);
+    return () => resized.disconnect();
+  }, [chatShown]);
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (!el || !chat) return;
-    const newest = chat.messages.at(-1)?.id ?? null;
-    const first = lastSeen.current === null || !chat.messages.some((m) => m.id === lastSeen.current);
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
-    if (newest !== lastSeen.current && (first || nearBottom)) el.scrollTop = el.scrollHeight;
-    lastSeen.current = newest;
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [chat]);
+  /** Stay at the newest message from now on (or, scrolled up, stop). */
+  const pin = useCallback((on: boolean) => {
+    pinnedRef.current = on;
+  }, []);
+  function toBottom() {
+    const el = scroller.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+  function onScroll() {
+    const el = scroller.current;
+    if (el) pin(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+  }
 
   if (hidden || tabs.length === 0) return null;
 
@@ -297,6 +332,7 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
         className={`fixed inset-0 z-40 bg-black/45 transition-opacity duration-200 ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
       />
       <aside
+        ref={aside}
         className="fixed top-0 right-0 bottom-0 z-50 transition-transform duration-[260ms] ease-out"
         style={panelStyle}
         aria-label={shown === "chat" ? "Chat" : podium?.label}
@@ -356,13 +392,37 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
             style={{ top: `calc(70% + ${(joinAt + 1) * TAB_H - 1}px)` }}
           />
           {shown === "podium" && podium ? (
-            <>
-              <header className="flex flex-col border-b border-surface-2 px-4 pb-3">
-                <span className="text-[17px] font-bold">{podium.title}</span>
-                {podium.subtitle && <span className="text-xs text-muted">{podium.subtitle}</span>}
-              </header>
-              <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">{podium.content}</div>
-            </>
+            // Links inside open their page here, on top; back returns to the page under it, as you left it.
+            <PanelNavProvider value={(page) => setPages((ps) => [...ps, page])}>
+              <div className={pages.length ? "hidden" : "flex min-h-0 flex-1 flex-col"}>
+                <header className="flex flex-col border-b border-surface-2 px-4 pb-3">
+                  <span className="text-[17px] font-bold">{podium.title}</span>
+                  {podium.subtitle && <span className="text-xs text-muted">{podium.subtitle}</span>}
+                </header>
+                <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">{podium.content}</div>
+              </div>
+              {pages.map((page, i) => (
+                <div key={`${i}-${page.kind}-${page.id}`} className={i === pages.length - 1 ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+                  <header className="flex flex-col border-b border-surface-2 px-4 pb-3">
+                    <button
+                      type="button"
+                      onClick={() => setPages((ps) => ps.slice(0, i))}
+                      className="-ml-1 mb-1 flex max-w-full items-center gap-1 self-start py-0.5 text-sm font-semibold text-accent"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" className="shrink-0">
+                        <path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <span className="truncate">{i === 0 ? podium.title : pages[i - 1].title}</span>
+                    </button>
+                    <span className="text-[17px] font-bold">{page.title}</span>
+                    {page.subtitle && <span className="text-xs text-muted">{page.subtitle}</span>}
+                  </header>
+                  <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+                    <PanelPageView page={page} />
+                  </div>
+                </div>
+              ))}
+            </PanelNavProvider>
           ) : view.kind === "list" ? (
             <ChatList chats={list} onOpen={openChat} />
           ) : (
@@ -380,7 +440,7 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
                   {showing?.status && <span className="text-xs text-muted">{showing.status}</span>}
                 </span>
               </header>
-              <div ref={scroller} className="relative flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+              <div ref={scroller} onScroll={onScroll} className="relative flex flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-3">
                 {reactingOn && <div className="fixed inset-0 z-10" onClick={() => setReactingOn(null)} aria-hidden="true" />}
                 {showing ? (
                   <Messages messages={showing.messages} reactingOn={reactingOn} onPress={setReactingOn} onReact={onReact} />
@@ -389,23 +449,29 @@ export function SideTabs({ chat: chatProps, podium }: Props) {
                 )}
               </div>
               {error && <p className="px-4 pb-2 text-center text-sm text-danger">{error}</p>}
-              <form onSubmit={onSend} className="flex items-center gap-2.5 border-t border-surface-2 px-4 pt-2.5">
+              <form onSubmit={onSend} className="flex items-center gap-2 border-t border-surface-2 px-4 pt-2">
+                {/* 16 px text: any smaller and iPhones zoom the page in when you tap the box. */}
                 <input
                   value={text}
                   onChange={(e) => setText(e.target.value)}
+                  onFocus={() => {
+                    // Typing: back to the newest message, and it stays there as the keyboard comes up.
+                    pin(true);
+                    toBottom();
+                  }}
                   maxLength={MAX_MESSAGE_LENGTH}
                   enterKeyHint="send"
                   placeholder="Message"
                   aria-label="Message"
-                  className="min-w-0 flex-1 rounded-full border border-line bg-surface px-4 py-3 text-base text-ink placeholder:text-[#6b6b7a] focus:border-muted focus:outline-none"
+                  className="min-w-0 flex-1 rounded-full border border-line bg-surface px-3.5 py-1.5 text-base leading-[22px] text-ink placeholder:text-[#6b6b7a] focus:border-muted focus:outline-none"
                 />
                 <button
                   type="submit"
                   disabled={!text.trim() || sending}
                   aria-label="Send"
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent transition disabled:opacity-40"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent transition disabled:opacity-40"
                 >
-                  <svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M8 13V3.5M3.8 7.5L8 3.3l4.2 4.2" fill="none" stroke="var(--color-accent-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
@@ -525,20 +591,18 @@ function Messages({
 }) {
   if (messages.length === 0) return <p className="py-10 text-center text-sm text-muted">No messages yet. Say hi.</p>;
   return (
-    <ol className="flex flex-col gap-3">
+    // A short chat sits at the bottom, right above the message box.
+    <ol className="mt-auto flex flex-col gap-[3px]">
       {messages.map((m, i) => {
-        const day = dayOf(m.at);
-        const newDay = i === 0 || dayOf(messages[i - 1].at) !== day;
+        const prev = i > 0 ? messages[i - 1] : null;
+        // A date and time only for the first message and after an hour or more of quiet.
+        const stamped = stampBefore(m.at, prev?.at ?? null);
+        // A new run of messages: after a time line, or from someone else.
+        const fresh = stamped || !prev || prev.mine !== m.mine || prev.sender !== m.sender;
         return (
-          <li key={m.id} className="flex flex-col gap-3">
-            {newDay && (
-              <div className="flex items-center gap-2.5 text-xs font-semibold tracking-[0.08em] text-muted uppercase">
-                <span className="h-px flex-1 bg-line" />
-                {day}
-                <span className="h-px flex-1 bg-line" />
-              </div>
-            )}
-            <Message m={m} picking={reactingOn === m.id} onPress={onPress} onReact={onReact} />
+          <li key={m.id} className={`flex flex-col ${fresh && !stamped ? "mt-1.5" : ""}`}>
+            {stamped && <p className={`${i > 0 ? "mt-2.5" : ""} mb-1 text-center text-[10px] font-semibold text-muted`}>{stampText(m.at)}</p>}
+            <Message m={m} named={fresh} picking={reactingOn === m.id} onPress={onPress} onReact={onReact} />
           </li>
         );
       })}
@@ -548,11 +612,14 @@ function Messages({
 
 function Message({
   m,
+  named,
   picking,
   onPress,
   onReact,
 }: {
   m: ChatMessageView;
+  /** First of a run from this sender: their name goes above it. */
+  named: boolean;
   picking: boolean;
   onPress: (id: string) => void;
   onReact: (messageId: string, kind: string) => void;
@@ -580,16 +647,21 @@ function Message({
   };
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
-  const meta = (
-    <span className={`text-xs text-muted ${m.mine ? "pr-1" : "pl-1"}`}>
-      {m.mine ? timeOf(m.at) : `${m.sender} · ${timeOf(m.at)}`}
-      {m.heldUntil !== null && ` · after song ${m.heldUntil}`}
-      {m.afterSong !== null && <span className="text-accent"> · after song {m.afterSong}</span>}
-    </span>
-  );
+  const tag =
+    m.heldUntil !== null ? (
+      <> · after song {m.heldUntil}</>
+    ) : m.afterSong !== null ? (
+      <span className="text-accent"> · after song {m.afterSong}</span>
+    ) : null;
+  const showName = !m.mine && (named || tag !== null);
+  const reacted = m.reactions.length > 0;
 
   return (
-    <div className={`relative flex max-w-[250px] flex-col gap-1 ${m.mine ? "items-end self-end" : "items-start self-start"} ${picking ? "z-20" : ""}`}>
+    <div
+      className={`relative flex max-w-[240px] flex-col gap-0.5 ${m.mine ? "items-end self-end" : "items-start self-start"} ${
+        reacted && !showName ? "mt-2" : ""
+      } ${picking ? "z-20" : ""}`}
+    >
       {picking && (
         <div
           className={`absolute bottom-full mb-1 flex gap-0.5 rounded-full border border-line bg-[#1b1b24] p-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)] ${m.mine ? "right-0" : "left-0"}`}
@@ -611,38 +683,47 @@ function Message({
           })}
         </div>
       )}
-      {meta}
-      {m.text === null ? (
-        <span className="rounded-[18px] rounded-bl-md bg-surface-2 px-3.5 py-2.5" aria-label={`Hidden until you play song ${m.heldUntil}`}>
-          <Sparkles id={m.id} width={sparkleWidth(m.id)} height={20} />
-        </span>
-      ) : (
-        <span
-          {...press}
-          className={`whitespace-pre-wrap break-words px-3.5 py-2.5 text-[15px] leading-snug select-none [-webkit-touch-callout:none] ${
-            m.mine ? "rounded-[18px] rounded-br-md bg-accent font-medium text-accent-ink" : "rounded-[18px] rounded-bl-md bg-surface-2 text-ink"
-          } ${picking ? "ring-2 ring-accent ring-offset-2 ring-offset-[#121219]" : ""}`}
-        >
-          {m.text}
+      {showName && (
+        <span className="pl-2.5 text-[10px] text-muted">
+          {m.sender}
+          {tag}
         </span>
       )}
-      {m.reactions.length > 0 && (
-        <span className="flex gap-1.5">
-          {m.reactions.map((r) => (
-            <button
-              key={r.kind}
-              onClick={() => onReact(m.id, r.kind)}
-              aria-label={`${r.kind}, ${r.count}`}
-              className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${
-                r.mine ? "border-accent bg-accent/15" : "border-line bg-surface"
-              }`}
-            >
-              <span className="text-sm leading-none">{r.emoji}</span>
-              {r.count}
-            </button>
-          ))}
-        </span>
-      )}
+      <span className="relative block max-w-full">
+        {m.text === null ? (
+          <span
+            className="block rounded-[14px] rounded-bl-[4px] bg-surface-2 px-2.5 py-[5px]"
+            aria-label={`Hidden until you play song ${m.heldUntil}`}
+          >
+            <Sparkles id={m.id} width={sparkleWidth(m.id)} height={12} />
+          </span>
+        ) : (
+          <span
+            {...press}
+            className={`block whitespace-pre-wrap break-words px-2.5 py-[5px] text-[12px] leading-[1.3] select-none [-webkit-touch-callout:none] ${
+              m.mine ? "rounded-[14px] rounded-br-[4px] bg-accent font-medium text-accent-ink" : "rounded-[14px] rounded-bl-[4px] bg-surface-2 text-ink"
+            } ${picking ? "ring-2 ring-accent ring-offset-2 ring-offset-[#121219]" : ""}`}
+          >
+            {m.text}
+          </span>
+        )}
+        {/* Reactions perch on the bubble's top-right corner; a count only when there's more than one. Tap to react. */}
+        {reacted && (
+          <button
+            type="button"
+            onClick={() => onPress(m.id)}
+            aria-label={`Reactions: ${m.reactions.map((r) => `${r.kind} ${r.count}`).join(", ")}`}
+            className="absolute -top-2.5 -right-[9px] inline-flex items-center gap-1 rounded-full border border-line bg-surface px-[5px] py-px text-[10px] leading-none font-bold text-ink"
+          >
+            {m.reactions.map((r) => (
+              <span key={r.kind} className="inline-flex items-center gap-px">
+                <span className="text-[11px] leading-none">{r.emoji}</span>
+                {r.count > 1 && r.count}
+              </span>
+            ))}
+          </button>
+        )}
+      </span>
     </div>
   );
 }

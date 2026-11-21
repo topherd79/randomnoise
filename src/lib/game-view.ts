@@ -255,6 +255,15 @@ export async function loadGameView(gameId: string, userId: string): Promise<Game
   };
 }
 
+/**
+ * A game that's over, as this player sees it (the past-games panel opens it).
+ * Null if they weren't in it, or it's still being played.
+ */
+export async function overGameView(gameId: string, userId: string): Promise<GameView | null> {
+  const view = await loadGameView(gameId, userId);
+  return view && view.status !== "active" ? view : null;
+}
+
 /** The games in progress a player is in, newest first, with what's waiting for them. */
 export async function myGames(userId: string) {
   const rows = await db

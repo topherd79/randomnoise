@@ -11,6 +11,7 @@ import { Logo } from "@/components/Logo";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { PlayRound } from "./PlayRound";
 import { PicksList, ResultsCard, SongCard } from "./parts";
+import { Final } from "./Final";
 import { Standings } from "./Standings";
 import { Waiting } from "./Waiting";
 import { AuxGame } from "./AuxGame";
@@ -205,33 +206,9 @@ function LeftOut() {
 }
 
 function OverGame({ view, userId }: { view: GameView; userId: string }) {
-  const top = view.standings[0];
-  const winners = view.standings.filter((s) => s.points === top?.points);
   return (
     <div className="flex flex-col gap-8 pt-6">
-      <section>
-        <h1 className="text-3xl font-bold leading-tight">
-          {view.status === "cancelled"
-            ? "This game was ended early."
-            : winners.length > 1
-              ? `${winners.map((w) => w.name).join(" and ")} tie!`
-              : `${top?.name} wins!`}
-        </h1>
-        {view.status === "finished" && top && (
-          <p className="mt-2 text-lg text-muted">
-            {formatPoints(top.points)} points over {view.songCount} songs.
-          </p>
-        )}
-      </section>
-      <Standings gameId={view.id} me={userId} standings={view.standings} songs={view.songs} title="Final standings" />
-      {view.history.map((r) => (
-        <ResultsCard
-          key={r.position}
-          results={r}
-          // Pass the Aux: each song was one player's turn.
-          title={view.mode === "aux" && r.picks[0] ? `Song ${r.position} · ${r.picks[0].name}` : `Song ${r.position}`}
-        />
-      ))}
+      <Final view={view} me={userId} />
       <Link href="/" className="rounded-full bg-surface-2 py-3 text-center font-semibold text-ink">
         Home
       </Link>

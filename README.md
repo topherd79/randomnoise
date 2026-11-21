@@ -47,9 +47,12 @@ and games from a desktop browser.
 - **Chat:** every group of players (2 or more, not Pass the Aux) has one chat, kept across all their
   games. A small tab on the right edge of the home and game pages shows your unread count; tap it and
   the chat slides in. A message written further into a game than you've played shows as sparkles
-  until you catch up, so chat never spoils a song. Text and emoji, plus reactions (touch and hold).
+  until you catch up, so chat never spoils a song. Text and emoji, plus reactions (touch and hold; they
+  sit on the bubble's corner). It opens at the newest message and stays there when the keyboard comes
+  up; a date and time shows only where an hour or more has passed.
 - **Side tabs:** the chat tab and, under it, a podium tab. On a game page the podium slides in the
-  standings; on the home page, all your past games. Tap the other tab to switch panels.
+  standings; on the home page, all your past games. Tap the other tab to switch panels. Nothing in a
+  panel leaves it: a past game's results, or a name's profile, open inside the panel with a back arrow.
 - **Profiles:** your profile (games, wins, % right, average answer time, top three guesses, best and
   worst genre and decade) and every past game; a friend's short profile from a name in the standings.
   Only games that are over count.

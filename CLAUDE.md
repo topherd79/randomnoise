@@ -75,6 +75,12 @@ in progress.
 - Text and emoji, plus reactions (one per person per message; the same one again takes it back). No
   deleting, no emails: the unread count on the tab is the only alert (`chat_members.last_read_at`).
   A removed player's messages keep their name (`sender_name`). The admin sees only the chats they're in.
+- The chat panel: 12 px bubbles 3 px apart, the sender's name only when the sender changes, reactions in
+  one badge on the bubble's top-right corner (a count only above 1; tap it for the picker). No time on
+  each bubble: a "11/21 · 8:02 PM" line before the first message and wherever an hour or more has passed
+  (`stampBefore`, `stampText` in `chat-rules.ts`, the phone's own time). It opens at the newest message and
+  stays pinned there (new messages, the keyboard shrinking the panel: a `ResizeObserver`) unless you've
+  scrolled up; tapping the box pins it again. The box's text stays 16 px so iPhones don't zoom in.
 - **Side tabs** (`src/components/SideTabs.tsx`): two tabs stacked on the right edge, chat on top (unread
   count in its bubble) and a podium under it. Each slides its panel in over the page; the open tab joins
   its panel like a folder tab and the other keeps its outline (tap it to switch). On a game page: the
@@ -85,6 +91,13 @@ in progress.
   while a song is playing (`PlayRound` sends `rn:song`). The chat talks to `/api/chat` and
   `/api/chat/[id]` with fetch (never a page reload) and gets "chat" events from `/api/live`
   (`publishChatUpdate`). `<LiveRefresh>` waits while a panel is open, then catches up.
+- **Nothing in a panel leaves it:** a past game and a name's profile button use `PanelLink`
+  (`src/components/PanelNav.tsx`): inside a panel it opens the page in the panel, on top of what was
+  there, with a back arrow naming the page under it; anywhere else it's an ordinary link. The pages
+  (`src/components/PanelPages.tsx`) fetch `/api/games/[id]` (`overGameView`: games that are over, for
+  their players) and `/api/players/[id]` (`profileCard`: the short profile, yours included). A game over
+  shows the same `Final` as its game page. Back keeps each page as you left it; reopening the podium
+  starts at its top; closing the panel pauses a song playing in it. Music links still open the app.
 
 ## Stack
 
@@ -173,8 +186,8 @@ in progress.
   (`completeSongIfDone`) or its game ends early (`cancelGame`); `scripts/cleanup-clips.mjs`
   sweeps leftovers on every start.
 - **Profiles** (`src/lib/profiles.ts`, numbers in `src/lib/profile-stats.ts`): `/profile` (your own, with
-  past games at `/profile/games`) and `/players/[id]` (a friend's short version, reached from a name in the
-  standings). Only games that are over count: finished games, plus the finished songs of games ended early
+  past games at `/profile/games`) and `/players/[id]` (a friend's short version, `ProfileSummary`, reached
+  from a name in a finished game's standings; in a side panel the same summary opens in the panel). Only games that are over count: finished games, plus the finished songs of games ended early
   (which count toward the numbers but not as a game played or won). A game played alone is never a win.
   Best and worst genre and decade go by average points a song, with at least 5 songs. Anyone you've played
   a game with can open your profile (`maySeeProfile`); the admin can open anyone's.
@@ -215,7 +228,7 @@ npm run typecheck && npm run lint && npm test && npm run build
 - Pure logic lives in modules without server-only imports so it can be unit tested: `rules.ts`,
   `clips.ts`, `song-filters.ts`, `draw.ts` (song draw, artist limit, wrong answers), `normalize.ts`,
   `modes.ts` (rounds per game mode), `aux.ts` (Pass the Aux turns and timings), `chat-rules.ts` (held-back
-  messages, reactions), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
+  messages, reactions, time lines), `genres.ts`, `csv.ts`, `profile-stats.ts` (best guesses, best and
   worst genre and decade, placings).
 - **Artist limit:** a game has at most one song per artist for every five songs
   (`maxSongsPerArtist` in `src/lib/draw.ts`), except artists picked on the form; it never blocks a

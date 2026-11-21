@@ -9,6 +9,9 @@ import {
   reactionCounts,
   sparkleDots,
   sparkleWidth,
+  STAMP_GAP_MS,
+  stampBefore,
+  stampText,
   type ReaderProgress,
 } from "@/lib/chat-rules";
 
@@ -77,5 +80,20 @@ describe("chat rules", () => {
     }
     expect(sparkleDots("abc", 100, 20)).toEqual(sparkleDots("abc", 100, 20));
     expect(sparkleDots("abc", 100, 20)).not.toEqual(sparkleDots("abd", 100, 20));
+  });
+
+  it("puts a date and time only on the first message and after an hour or more of quiet", () => {
+    const at = new Date(2026, 10, 21, 20, 2).getTime();
+    expect(stampBefore(at, null)).toBe(true);
+    expect(stampBefore(at, at - 59 * 60_000)).toBe(false);
+    expect(stampBefore(at, at - STAMP_GAP_MS)).toBe(true);
+    expect(stampBefore(at, at - 3 * 86_400_000)).toBe(true);
+  });
+
+  it("writes the time as month/day and the clock, with no year", () => {
+    expect(stampText(new Date(2026, 10, 21, 20, 2).getTime())).toBe("11/21 · 8:02 PM");
+    expect(stampText(new Date(2027, 2, 5, 0, 5).getTime())).toBe("3/5 · 12:05 AM");
+    expect(stampText(new Date(2026, 0, 9, 12, 30).getTime())).toBe("1/9 · 12:30 PM");
+    expect(stampText(new Date(2026, 6, 4, 9, 0).getTime())).toBe("7/4 · 9:00 AM");
   });
 });

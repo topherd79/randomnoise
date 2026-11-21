@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
+import { PanelLink } from "@/components/PanelNav";
 import type { Standing } from "@/lib/games";
 import type { Pick, ResultsView } from "@/lib/game-view";
 import { formatPoints, formatSeconds } from "@/lib/rules";
@@ -84,15 +84,17 @@ export function Standings({
                     <HistoryRow key={song.position} position={song.position} title={song.song.title} artist={song.song.artist} pick={pick} />
                   ))}
                   <li className="pb-2 pt-2.5">
-                    <Link
+                    {/* In a side panel, the profile opens in the panel. */}
+                    <PanelLink
                       href={s.userId === me ? "/profile" : `/players/${s.userId}?from=${gameId}`}
+                      page={{ kind: "profile", id: s.userId, title: "Profile" }}
                       className="flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-surface-2 font-semibold"
                     >
                       {s.userId === me ? "Your profile" : `${s.name}'s profile`}
                       <svg viewBox="0 0 16 16" className="size-3.5" aria-hidden="true">
                         <path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                    </Link>
+                    </PanelLink>
                   </li>
                 </ul>
               )}

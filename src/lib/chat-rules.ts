@@ -74,6 +74,24 @@ export function reactionCounts(reactions: { userId: string; kind: string }[], me
   });
 }
 
+/** This much quiet between two messages puts a date and time between them. */
+export const STAMP_GAP_MS = 60 * 60 * 1000;
+
+/**
+ * Whether a message gets a date and time above it: the first message, and any
+ * message an hour or more after the one before. No time on every bubble.
+ */
+export function stampBefore(at: number, previousAt: number | null): boolean {
+  return previousAt === null || at - previousAt >= STAMP_GAP_MS;
+}
+
+/** "11/21 · 8:02 PM", in the phone's own time; no year. */
+export function stampText(at: number): string {
+  const d = new Date(at);
+  const h = d.getHours();
+  return `${d.getMonth() + 1}/${d.getDate()} · ${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+
 /** "Mike, Sarah and you", for a chat's title (the other members by name, then you). */
 export function chatTitle(otherNames: string[]): string {
   const names = [...otherNames].sort((a, b) => a.localeCompare(b));
