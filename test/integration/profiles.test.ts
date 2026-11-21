@@ -8,7 +8,8 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { gameSongs, games } from "@/db/schema";
 import { answerSong, cancelGame, createGame, startSong } from "@/lib/games";
-import { loadProfile, maySeeProfile, pastGames } from "@/lib/profiles";
+import { loadProfile, maySeeProfile, pastGames, profileCard } from "@/lib/profiles";
+import { overGameView } from "@/lib/game-view";
 import { countGames, gameSummaries } from "@/lib/admin-games";
 import { NO_FILTERS } from "@/lib/song-filters";
 import { addUser, addVariedSongs, resetAll } from "./helpers";
@@ -104,6 +105,46 @@ describe("profiles", () => {
     const t = (await loadProfile(topher))!;
     expect(t).toMatchObject({ games: 1, wins: 0 });
     expect(t.past[0]).toMatchObject({ players: 1, result: "", won: false, others: [] });
+  });
+});
+
+describe("inside a side panel", () => {
+  it("opens a game only once it's over, and only for its players", async () => {
+    const [topher, mike, zed] = [await addUser("Topher"), await addUser("Mike"), await addUser("Zed")];
+    await addVariedSongs(12);
+    const game = await newGame([topher, mike], topher);
+    await play(topher, game, 1);
+    await play(mike, game, 1, false);
+    // Still being played: the panel never opens it (the game page is where it's played).
+    expect(await overGameView(game, topher)).toBeNull();
+    for (let p = 2; p <= 5; p++) {
+      await play(topher, game, p);
+      await play(mike, game, p, false);
+    }
+    const view = (await overGameView(game, topher))!;
+    expect(view).toMatchObject({ status: "finished", songCount: 5 });
+    expect(view.history.map((r) => r.position)).toEqual([5, 4, 3, 2, 1]);
+    expect(view.standings.map((s) => s.name)).toEqual(["Topher", "Mike"]);
+    // It travels as JSON: nothing in it that JSON would change.
+    expect(JSON.parse(JSON.stringify(view))).toEqual(view);
+    expect(await overGameView(game, zed)).toBeNull();
+  });
+
+  it("shows a short profile to yourself, anyone you've played with and the admin, without the list of games", async () => {
+    const [topher, mike, zed] = [await addUser("Topher"), await addUser("Mike"), await addUser("Zed")];
+    await addVariedSongs(12);
+    const game = await newGame([topher, mike], topher);
+    for (let p = 1; p <= 5; p++) {
+      await play(topher, game, p);
+      await play(mike, game, p, false);
+    }
+    const card = (await profileCard({ id: mike, isAdmin: false }, topher))!;
+    expect(card).toMatchObject({ userId: topher, name: "Topher", games: 1, wins: 1, answered: 5, right: 5 });
+    expect(card.bestGuesses).toHaveLength(3);
+    expect(card).not.toHaveProperty("past");
+    expect(await profileCard({ id: topher, isAdmin: false }, topher)).toMatchObject({ name: "Topher" });
+    expect(await profileCard({ id: zed, isAdmin: false }, topher)).toBeNull();
+    expect(await profileCard({ id: zed, isAdmin: true }, topher)).toMatchObject({ name: "Topher" });
   });
 });
 

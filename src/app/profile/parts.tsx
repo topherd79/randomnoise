@@ -1,5 +1,6 @@
 import Link from "next/link";
-import type { PastGame, Profile } from "@/lib/profiles";
+import type { PastGame, Profile, ProfileCard } from "@/lib/profiles";
+import { PanelLink } from "@/components/PanelNav";
 import type { GroupStat, ScoredSong } from "@/lib/profile-stats";
 import { companyText, ordinal } from "@/lib/profile-stats";
 import { MODES } from "@/lib/modes";
@@ -53,14 +54,33 @@ export function percentRight(p: Pick<Profile, "answered" | "right">): string | n
   return p.answered ? `${Math.round((100 * p.right) / p.answered)}%` : null;
 }
 
-/** One game in a past-games list: your place, the game, your points and who won. */
+/** A past game's two lines: "Nov 14 · 3 songs", and "9 songs · with Dave and Sarah". */
+function pastGameLines(game: PastGame) {
+  return {
+    title: `${day(game.date)} · ${MODES[game.mode].name}`,
+    detail:
+      game.status === "cancelled"
+        ? `Ended early after ${game.completed} of ${game.songCount} songs`
+        : `${game.songCount} songs · ${companyText(game.others)}`,
+  };
+}
+
+/**
+ * One game in a past-games list: your place, the game, your points and who won.
+ * In the past-games panel its results open in the panel.
+ */
 export function PastGameRow({ game }: { game: PastGame }) {
   const ended = game.status === "cancelled";
   const solo = game.players === 1;
   const badge = ended ? "End" : solo ? "Solo" : ordinal(game.place);
+  const { title, detail } = pastGameLines(game);
   return (
     <li>
-      <Link href={`/game/${game.id}`} className="flex items-center gap-3 px-4 py-3.5 active:bg-surface-2">
+      <PanelLink
+        href={`/game/${game.id}`}
+        page={{ kind: "game", id: game.id, title, subtitle: detail }}
+        className="flex items-center gap-3 px-4 py-3.5 active:bg-surface-2"
+      >
         <span
           className={`flex size-9 shrink-0 items-center justify-center rounded-full font-extrabold ${
             game.won
@@ -73,20 +93,14 @@ export function PastGameRow({ game }: { game: PastGame }) {
           {badge}
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate font-semibold">
-            {day(game.date)} · {MODES[game.mode].name}
-          </span>
-          <span className="truncate text-sm text-muted">
-            {ended
-              ? `Ended early after ${game.completed} of ${game.songCount} songs`
-              : `${game.songCount} songs · ${companyText(game.others)}`}
-          </span>
+          <span className="truncate font-semibold">{title}</span>
+          <span className="truncate text-sm text-muted">{detail}</span>
         </span>
         <span className="flex shrink-0 flex-col items-end">
           <span className="font-bold tabular-nums">{formatPoints(game.points)}</span>
           {game.result && <span className="text-[13px] text-muted">{game.result}</span>}
         </span>
-      </Link>
+      </PanelLink>
     </li>
   );
 }
@@ -207,5 +221,43 @@ export function GroupCard({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The short profile: name, games and wins, best guesses, best and worst genre
+ * and decade. A friend's profile page, and any profile opened in a side panel
+ * (`compact`), yours included.
+ */
+export function ProfileSummary({ p, compact = false }: { p: ProfileCard; compact?: boolean }) {
+  const right = percentRight(p);
+  const line = [gamesAndWins(p), right && `${right} right`, p.averageMs !== null && `${secs(p.averageMs)} average`].filter(Boolean);
+  return (
+    <>
+      <section className="flex items-center gap-3">
+        <Avatar name={p.name} size={compact ? 48 : 52} />
+        <div className="min-w-0">
+          <h1 className={`truncate font-bold leading-tight ${compact ? "text-[22px]" : "text-[26px]"}`}>{p.name}</h1>
+          <p className={compact ? "text-[13px] text-muted" : "text-sm text-muted"}>{line.join(" · ")}</p>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-2.5">
+        <SectionTitle>Best guesses</SectionTitle>
+        <BestGuesses guesses={p.bestGuesses} compact />
+      </section>
+
+      <section className="flex flex-col gap-2.5">
+        <SectionTitle>Best and worst</SectionTitle>
+        <div className="grid grid-cols-2 gap-2">
+          <GroupCard stat={p.genres.best} which="best" kind="genre" label="Best genre" compact />
+          <GroupCard stat={p.genres.worst} which="worst" kind="genre" label="Worst genre" compact />
+          <GroupCard stat={p.decades.best} which="best" kind="decade" label="Best decade" compact />
+          <GroupCard stat={p.decades.worst} which="worst" kind="decade" label="Worst decade" compact />
+        </div>
+      </section>
+
+      <p className="text-xs leading-relaxed text-muted">Only games that are over count.</p>
+    </>
   );
 }

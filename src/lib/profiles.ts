@@ -184,6 +184,21 @@ export async function loadProfile(userId: string): Promise<Profile | null> {
   };
 }
 
+/** The short profile (a friend's page, or any profile opened in a side panel): no list of games. */
+export type ProfileCard = Pick<
+  Profile,
+  "userId" | "name" | "games" | "wins" | "answered" | "right" | "averageMs" | "bestGuesses" | "genres" | "decades"
+>;
+
+/** Someone's short profile, if this viewer may see it (see `maySeeProfile`). */
+export async function profileCard(viewer: { id: string; isAdmin: boolean }, userId: string): Promise<ProfileCard | null> {
+  if (!(await maySeeProfile(viewer, userId))) return null;
+  const p = await loadProfile(userId);
+  if (!p) return null;
+  const { userId: id, name, games, wins, answered, right, averageMs, bestGuesses, genres, decades } = p;
+  return { userId: id, name, games, wins, answered, right, averageMs, bestGuesses, genres, decades };
+}
+
 /**
  * Who may open whose profile: your own, anyone you've played a game with, and
  * the admin anyone's. Players from another group of friends stay private.
