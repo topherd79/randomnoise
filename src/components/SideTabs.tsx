@@ -6,20 +6,24 @@ import { MAX_MESSAGE_LENGTH, REACTIONS, sparkleDots, sparkleWidth } from "@/lib/
 import { reportClientError } from "@/lib/client-errors";
 import { withTimeout } from "@/lib/timeout";
 
-// The chat: a small tab on the right edge, with the unread count in its
-// bubble. Tap it and the chat slides in over the page; tap the tab again (or
-// the page behind) and it slides back. On a game page it's that group's chat;
-// on the home page, your list of chats.
+// The side tabs: two small tabs on the right edge, stacked with no gap. The
+// chat tab (on top) has the unread count in its bubble; the podium tab under
+// it opens the standings on a game page, or your past games on the home page.
+// Tap a tab and its panel slides in over the page; the open tab joins its panel
+// like a folder tab (same background, no line between them) and the other tab
+// keeps its outline, so tapping it switches panels. Tap the open tab again (or
+// the page behind) and the panel slides back. Tabs and panels share one
+// see-through background; what's inside them stays solid.
 //
-// It keeps its own copy of the chat (fetch, never a page reload), updated live
-// through /api/live, and it hides while a song is playing (PlayRound sends
+// The chat keeps its own copy (fetch, never a page reload), updated live
+// through /api/live. Both tabs hide while a song is playing (PlayRound sends
 // "rn:song"). Held-back messages arrive without their words and show as sparkles.
 
 const REPLY_MS = 8_000;
 const POLL_MS = 30_000;
 const LONG_PRESS_MS = 450;
 
-type Props = {
+type ChatProps = {
   /** The game page's chat. Without it (the home page) the tab opens your list of chats. */
   chatId?: string;
   /** The chats to listen to for new messages. */
@@ -29,6 +33,23 @@ type Props = {
   /** Unread messages when the page was made. */
   unread: number;
 };
+
+/** The podium tab's panel: the standings (game page) or your past games (home page). */
+type PodiumProps = {
+  /** Names the tab for screen readers: "Standings", "Past games". */
+  label: string;
+  title: string;
+  subtitle?: string;
+  content: React.ReactNode;
+};
+
+type Props = { chat?: ChatProps; podium?: PodiumProps };
+type Tab = "chat" | "podium";
+
+/** Each tab's height; they sit 70% of the way down the screen, chat first. */
+const TAB_H = 58;
+/** One see-through level for the tabs and the panels. */
+const GLASS = "bg-[rgba(18,18,25,0.55)] backdrop-blur-[10px]";
 
 type View = { kind: "list" } | { kind: "chat"; id: string };
 
@@ -48,8 +69,15 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export function ChatTab({ chatId, chatIds, gameIds, unread: initialUnread }: Props) {
-  const [open, setOpen] = useState(false);
+export function SideTabs({ chat: chatProps, podium }: Props) {
+  const chatId = chatProps?.chatId;
+  const chatIds = chatProps?.chatIds ?? [];
+  const gameIds = chatProps?.gameIds ?? [];
+  const initialUnread = chatProps?.unread ?? 0;
+  const tabs: Tab[] = [...(chatProps ? ["chat" as const] : []), ...(podium ? ["podium" as const] : [])];
+  const [open, setOpen] = useState<Tab | null>(null);
+  /** What the panel shows: stays put while it slides away. */
+  const [shown, setShown] = useState<Tab>(tabs[0] ?? "chat");
   const [hidden, setHidden] = useState(false);
   const [view, setView] = useState<View>(chatId ? { kind: "chat", id: chatId } : { kind: "list" });
   const [list, setList] = useState<ChatSummary[] | null>(null);
@@ -60,10 +88,10 @@ export function ChatTab({ chatId, chatIds, gameIds, unread: initialUnread }: Pro
   const [error, setError] = useState<string | null>(null);
   const [reactingOn, setReactingOn] = useState<string | null>(null);
   const viewRef = useRef(view);
-  const openRef = useRef(open);
+  const openRef = useRef(false);
   useEffect(() => {
     viewRef.current = view;
-    openRef.current = open;
+    openRef.current = open === "chat";
   }, [view, open]);
 
   const loadCounts = useCallback(async () => {
@@ -138,31 +166,32 @@ export function ChatTab({ chatId, chatIds, gameIds, unread: initialUnread }: Pro
     const onSong = (e: Event) => {
       const playing = (e as CustomEvent<string>).detail === "playing";
       setHidden(playing);
-      if (playing) setOpen(false);
+      if (playing) setOpen(null);
     };
     window.addEventListener("rn:song", onSong);
     return () => window.removeEventListener("rn:song", onSong);
   }, []);
 
-  // While it's open: the page behind doesn't scroll, and doesn't refresh under you (LiveRefresh waits).
+  // While a panel is open: the page behind doesn't scroll, and doesn't refresh under you (LiveRefresh waits).
+  const isOpen = open !== null;
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
     const root = document.documentElement;
     const before = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    root.dataset.chatOpen = "1";
+    root.dataset.panelOpen = "1";
     return () => {
       document.body.style.overflow = before;
-      delete root.dataset.chatOpen;
-      window.dispatchEvent(new Event("rn:chat-closed"));
+      delete root.dataset.panelOpen;
+      window.dispatchEvent(new Event("rn:panel-closed"));
     };
-  }, [open]);
+  }, [isOpen]);
 
   // iPhones: keep the panel (and its message box) above the keyboard.
   const [box, setBox] = useState<{ top: number; height: number } | null>(null);
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!open || !vv) return;
+    if (!isOpen || !vv) return;
     const fit = () => setBox({ top: vv.offsetTop, height: vv.height });
     fit();
     vv.addEventListener("resize", fit);
@@ -171,18 +200,25 @@ export function ChatTab({ chatId, chatIds, gameIds, unread: initialUnread }: Pro
       vv.removeEventListener("resize", fit);
       vv.removeEventListener("scroll", fit);
     };
-  }, [open]);
+  }, [isOpen]);
 
-  function toggle() {
-    if (open) {
-      setOpen(false);
-      setReactingOn(null);
-      return;
-    }
-    setOpen(true);
+  function close() {
+    setOpen(null);
+    setReactingOn(null);
+  }
+
+  /** Tap a tab: open its panel, switch to it from the other one, or (if it's open) slide it back. */
+  function toggle(which: Tab) {
+    if (open === which) return close();
+    setOpen(which);
+    setShown(which);
     setError(null);
+    setReactingOn(null);
+    if (which !== "chat") return;
+    openRef.current = true;
     const v = chatId ? ({ kind: "chat", id: chatId } as View) : view;
     setView(v);
+    viewRef.current = v;
     if (v.kind === "chat") void loadChat(v.id, true).then(loadCounts);
     else void loadCounts();
   }
@@ -241,49 +277,93 @@ export function ChatTab({ chatId, chatIds, gameIds, unread: initialUnread }: Pro
     lastSeen.current = newest;
   }, [chat]);
 
-  if (hidden) return null;
+  if (hidden || tabs.length === 0) return null;
 
   const showing = view.kind === "chat" ? chat : null;
   const panelStyle: React.CSSProperties = {
     width: "min(340px, calc(100vw - 56px))",
-    transform: open ? "translateX(0)" : "translateX(100%)",
-    ...(open && box ? { top: box.top, height: box.height, bottom: "auto" } : {}),
+    transform: isOpen ? "translateX(0)" : "translateX(100%)",
+    ...(isOpen && box ? { top: box.top, height: box.height, bottom: "auto" } : {}),
   };
+  // Where the open tab joins the panel: the panel's edge line has an opening there.
+  const joinAt = Math.max(0, tabs.indexOf(open ?? shown));
 
   return (
     <>
-      {/* The page behind: dimmed, and tapping it slides the chat back. */}
+      {/* The page behind: dimmed, and tapping it slides the panel back. */}
       <div
-        onClick={toggle}
+        onClick={close}
         aria-hidden="true"
-        className={`fixed inset-0 z-40 bg-black/45 transition-opacity duration-200 ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        className={`fixed inset-0 z-40 bg-black/45 transition-opacity duration-200 ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
       />
       <aside
         className="fixed top-0 right-0 bottom-0 z-50 transition-transform duration-[260ms] ease-out"
         style={panelStyle}
-        aria-label="Chat"
+        aria-label={shown === "chat" ? "Chat" : podium?.label}
       >
-        {/* The tab rides on the panel's edge: on the screen's edge when closed. */}
-        <button
-          onClick={toggle}
-          aria-label={open ? "Close chat" : unread > 0 ? `Chat, ${unread} unread` : "Chat"}
-          className="absolute top-[70%] -left-[50px] flex h-[58px] w-[50px] items-center justify-center rounded-l-2xl border border-r-0 border-[#3a3a48] bg-surface-2 shadow-[-6px_8px_20px_rgba(0,0,0,0.5)]"
-        >
-          {open ? (
-            <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M6 3l5 5-5 5" fill="none" stroke="var(--color-accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          ) : (
-            <Bubble count={unread} />
-          )}
-        </button>
+        {/* Closed: one stack on the screen's edge, with a shadow behind it. */}
+        {!isOpen && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -left-[50px] w-[50px] rounded-l-2xl shadow-[-6px_8px_20px_rgba(0,0,0,0.25)]"
+            style={{ top: "70%", height: tabs.length * TAB_H }}
+          />
+        )}
+        {tabs.map((t, i) => (
+          <button
+            key={t}
+            onClick={() => toggle(t)}
+            aria-label={
+              t === "chat"
+                ? open === "chat"
+                  ? "Close chat"
+                  : unread > 0
+                    ? `Chat, ${unread} unread`
+                    : "Chat"
+                : open === "podium"
+                  ? `Close ${podium!.label.toLowerCase()}`
+                  : podium!.label
+            }
+            className={`absolute -left-[50px] flex w-[50px] items-center justify-center ${GLASS} ${tabEdges(i, tabs.length, open === null ? null : tabs.indexOf(open))}`}
+            style={{ top: `calc(70% + ${i * TAB_H}px)`, height: TAB_H }}
+          >
+            {open === t ? (
+              <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M6 3l5 5-5 5" fill="none" stroke="var(--color-accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : t === "chat" ? (
+              <Bubble count={unread} />
+            ) : (
+              <Podium />
+            )}
+          </button>
+        ))}
 
         <div
-          inert={!open}
-          className="flex h-full flex-col rounded-l-3xl border-l border-line bg-[#121219] shadow-[-16px_0_40px_rgba(0,0,0,0.55)]"
+          inert={!isOpen}
+          className={`relative flex h-full flex-col rounded-l-3xl ${GLASS} shadow-[-16px_0_40px_rgba(0,0,0,0.55)]`}
           style={{ paddingTop: "max(env(safe-area-inset-top), 1.25rem)", paddingBottom: "max(env(safe-area-inset-bottom), 1rem)" }}
         >
-          {view.kind === "list" ? (
+          {/* The panel's edge, open where its tab joins it. */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0 top-6 w-px bg-line"
+            style={{ height: `calc(70% + ${joinAt * TAB_H + 1}px - 1.5rem)` }}
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0 bottom-6 w-px bg-line"
+            style={{ top: `calc(70% + ${(joinAt + 1) * TAB_H - 1}px)` }}
+          />
+          {shown === "podium" && podium ? (
+            <>
+              <header className="flex flex-col border-b border-surface-2 px-4 pb-3">
+                <span className="text-[17px] font-bold">{podium.title}</span>
+                {podium.subtitle && <span className="text-xs text-muted">{podium.subtitle}</span>}
+              </header>
+              <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">{podium.content}</div>
+            </>
+          ) : view.kind === "list" ? (
             <ChatList chats={list} onOpen={openChat} />
           ) : (
             <>
@@ -335,6 +415,33 @@ export function ChatTab({ chatId, chatIds, gameIds, unread: initialUnread }: Pro
         </div>
       </aside>
     </>
+  );
+}
+
+/**
+ * A tab's outline. Closed: the tabs make one stack (rounded at its outer
+ * corners, a line between them). Open: the open tab's outline runs into the
+ * panel's edge (it has no right side, so the two read as one piece); the other
+ * tab keeps its own outline, except the side it shares with the open tab.
+ */
+function tabEdges(i: number, count: number, openAt: number | null): string {
+  const line = "border-[#3a3a48]/55";
+  if (openAt === null) {
+    if (count === 1) return `rounded-l-2xl border border-r-0 ${line}`;
+    return i === 0 ? `rounded-tl-2xl border border-r-0 ${line}` : `rounded-bl-2xl border-b border-l ${line}`;
+  }
+  if (i === openAt) return "rounded-l-2xl border border-r-0 border-line shadow-[-8px_6px_18px_rgba(0,0,0,0.35)]";
+  return i > openAt ? `rounded-bl-2xl border-b border-l ${line}` : `rounded-tl-2xl border-t border-l ${line}`;
+}
+
+/** The podium: 1st in the middle (tallest), 2nd on the left, 3rd on the right. */
+function Podium() {
+  return (
+    <svg width="30" height="28" viewBox="0 0 30 28" aria-hidden="true">
+      <rect x="1.5" y="11" width="8.6" height="15.5" rx="1.6" fill="var(--color-accent)" />
+      <rect x="10.7" y="3.5" width="8.6" height="23" rx="1.6" fill="var(--color-accent)" />
+      <rect x="19.9" y="15.5" width="8.6" height="11" rx="1.6" fill="var(--color-accent)" />
+    </svg>
   );
 }
 

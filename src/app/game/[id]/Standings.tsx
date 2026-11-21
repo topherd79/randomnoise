@@ -24,6 +24,7 @@ export function Standings({
   songs,
   title = "Standings",
   played,
+  bare = false,
 }: {
   gameId: string;
   /** The viewer: their own row links to their profile. */
@@ -33,12 +34,14 @@ export function Standings({
   title?: string;
   /** Show "6 of 9 played" for each player (while the game is on). */
   played?: { songCount: number };
+  /** In the side panel, which has its own title: no heading. */
+  bare?: boolean;
 }) {
   const [open, setOpen] = useState<string | null>(null);
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">{title}</h2>
+      {!bare && <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">{title}</h2>}
       <ol className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
         {standings.map((s, i) => {
           const isOpen = open === s.userId;

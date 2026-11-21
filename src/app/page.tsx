@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { openLobbyFor } from "@/lib/aux-game";
 import { activeGamesIn, chatSummaries } from "@/lib/chat";
-import { ChatTab } from "@/components/ChatTab";
+import { SideTabs } from "@/components/SideTabs";
 import { myGames } from "@/lib/game-view";
 import { pastGames } from "@/lib/profiles";
 import { Logo } from "@/components/Logo";
@@ -11,10 +11,8 @@ import { LiveRefresh } from "@/components/LiveRefresh";
 import { SubmitButton } from "@/components/SubmitButton";
 import { logout } from "./actions";
 import { listNames, waitingOnText } from "@/lib/modes";
-import { Avatar, PastGamesList, SectionTitle, gamesAndWins } from "./profile/parts";
+import { Avatar, PastGamesList, gamesAndWins } from "./profile/parts";
 
-/** How many past games the home screen lists before "See all". */
-const RECENT = 3;
 
 export default async function Home(props: PageProps<"/">) {
   const user = await requireUser();
@@ -117,22 +115,16 @@ export default async function Home(props: PageProps<"/">) {
         </svg>
       </Link>
 
-      {past.length > 0 && (
-        <section className="mb-8 flex flex-col gap-3">
-          <div className="flex items-baseline justify-between">
-            <SectionTitle>Past games</SectionTitle>
-            {past.length > RECENT && (
-              <Link href="/profile/games" className="text-sm font-semibold text-accent">
-                See all {past.length}
-              </Link>
-            )}
-          </div>
-          <PastGamesList games={past.slice(0, RECENT)} />
-        </section>
-      )}
-
-      {chats.length > 0 && (
-        <ChatTab chatIds={chatIds} gameIds={chatGames} unread={chats.reduce((n, c) => n + c.unread, 0)} />
+      {/* The side tabs: your chats, and all your past games (they used to be listed here). */}
+      {(chats.length > 0 || past.length > 0) && (
+        <SideTabs
+          chat={chats.length > 0 ? { chatIds, gameIds: chatGames, unread: chats.reduce((n, c) => n + c.unread, 0) } : undefined}
+          podium={
+            past.length > 0
+              ? { label: "Past games", title: "Past games", subtitle: gamesAndWins(record), content: <PastGamesList games={past} /> }
+              : undefined
+          }
+        />
       )}
 
       <form action={logout} className="text-center">
