@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { copyFile } from "node:fs/promises";
 import { after } from "next/server";
-import { and, between, count, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, between, count, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   answers,
@@ -28,6 +28,7 @@ import { gameOnEmail, gameOverEmail, nudgeEmail, sendEmail } from "./email";
 import { maxSongsPerArtist, pickWithPreferred, pickWrongAnswers, shuffle } from "./draw";
 import { scoreAnswer } from "./rules";
 import { inRound, MODES, nextPosition, openRound, songsLeft } from "./modes";
+import { AUX_MIN_PLAYERS, auxSongCount, nextTurnPosition, turnIndex } from "./aux";
 import { ensureFolder, filePath, removeFile } from "./storage";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -55,7 +56,13 @@ export async function createGame(opts: {
   createdBy: string;
 }): Promise<Result<{ gameId: string }>> {
   const { playerIds, songCount, clipLengthSec, wrongAnswers, mode = "og", songPool = "new", filters = NO_FILTERS, createdBy } = opts;
-  if (!MODES[mode].lengths.includes(songCount)) {
+  if (mode === "aux") {
+    // Pass the Aux: everyone in one room, 5 songs a player.
+    if (playerIds.length < AUX_MIN_PLAYERS) return { ok: false, error: `Pass the Aux needs at least ${AUX_MIN_PLAYERS} players.` };
+    if (songCount !== auxSongCount(playerIds.length)) {
+      return { ok: false, error: `Pass the Aux is 5 songs a player: ${auxSongCount(playerIds.length)} songs for ${playerIds.length} players.` };
+    }
+  } else if (!MODES[mode].lengths.includes(songCount)) {
     return { ok: false, error: `${MODES[mode].name} games are ${MODES[mode].lengths.join(", ")} songs long.` };
   }
   const filtered = hasFilters(filters);
@@ -170,7 +177,11 @@ export async function createGame(opts: {
         .insert(games)
         .values({ songCount, clipLengthSec, wrongAnswers, mode, createdBy })
         .returning({ id: games.id });
-      await tx.insert(gamePlayers).values(playerIds.map((userId) => ({ gameId: game.id, userId })));
+      // Pass the Aux: a random turn order, shown in the lobby and the same every lap.
+      const order = mode === "aux" ? shuffle(playerIds) : null;
+      await tx
+        .insert(gamePlayers)
+        .values(playerIds.map((userId) => ({ gameId: game.id, userId, turnOrder: order ? order.indexOf(userId) + 1 : null })));
       await tx.insert(gameSongs).values(rows.map((r) => ({ ...r, gameId: game.id })));
       return game.id;
     });
@@ -240,11 +251,37 @@ export async function mayPlayClip(userId: string, clipFile: string): Promise<boo
     .limit(1);
   if (!row) return false;
   if (row.game.status !== "active") return true; // (an ended game's clips are deleted anyway)
+  if (row.game.mode === "aux") return mayPlayAuxClip(userId, row.game, row.position);
   const { round, answered } = await roundState(row.game);
   if (row.position < round.start) return true;
   if (!inRound(round, row.position)) return false;
   const next = nextPosition(round, answered(userId));
   return next === null || row.position <= next;
+}
+
+/**
+ * Pass the Aux: only the player whose turn a song is may fetch its clip, from
+ * the lobby on (so it's ready to play on cue) until it's been played. Never a
+ * song beyond their next turn.
+ */
+async function mayPlayAuxClip(userId: string, game: GameRow, position: number): Promise<boolean> {
+  const order = await auxTurnOrder(game.id);
+  const index = order.indexOf(userId);
+  if (index < 0 || turnIndex(position, order.length) !== index) return false;
+  // Songs before the current one were theirs and are over (their clip keeps
+  // playing through the changeover); otherwise only their next song.
+  if (position < game.currentPosition) return true;
+  return position === nextTurnPosition(index, order.length, game.currentPosition, game.songCount);
+}
+
+/** Pass the Aux: the players' ids in turn order. */
+export async function auxTurnOrder(gameId: string): Promise<string[]> {
+  const rows = await db
+    .select({ userId: gamePlayers.userId })
+    .from(gamePlayers)
+    .where(eq(gamePlayers.gameId, gameId))
+    .orderBy(asc(gamePlayers.turnOrder), asc(gamePlayers.userId));
+  return rows.map((r) => r.userId);
 }
 
 /** Tapping Play: the server's clock starts now. Calling it again keeps the original start. */
@@ -253,6 +290,8 @@ export async function startSong(userId: string, gameSongId: string): Promise<Res
   if (!row) return { ok: false, error: "That song isn't part of your game." };
   const { gs, game } = row;
   if (game.status !== "active" || gs.completedAt) return { ok: false, error: "This song isn't being played right now." };
+  // Pass the Aux turns are played through aux-game.ts (only the turn player, on the server's clock).
+  if (game.mode === "aux") return { ok: false, error: "This song isn't being played right now." };
   // Only the player's next song: the lowest one in the open round they haven't answered.
   const { round, answered } = await roundState(game);
   if (!inRound(round, gs.position) || nextPosition(round, answered(userId)) !== gs.position) {
@@ -284,6 +323,7 @@ export async function answerSong(
   const row = await playableRound(userId, gameSongId);
   if (!row) return { ok: false, error: "That song isn't part of your game." };
   const { gs, game } = row;
+  if (game.mode === "aux") return { ok: false, error: "This song isn't being played right now." };
 
   const [existing] = await db
     .select()
@@ -341,6 +381,8 @@ export async function completeSongIfDone(gameSongId: string): Promise<void> {
     .limit(1);
   if (!row || row.gs.completedAt || row.game.status !== "active") return;
   const { gs, game } = row;
+  // A Pass the Aux song is done when its one player answers or the turn runs out (aux-game.ts).
+  if (game.mode === "aux") return;
 
   const [[{ players }], [{ answered }]] = await Promise.all([
     db.select({ players: count() }).from(gamePlayers).where(eq(gamePlayers.gameId, game.id)),
@@ -371,7 +413,7 @@ export async function completeSongIfDone(gameSongId: string): Promise<void> {
  */
 async function advanceIfRoundDone(gameId: string): Promise<void> {
   const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
-  if (!game || game.status !== "active") return;
+  if (!game || game.status !== "active" || game.mode === "aux") return;
   const round = openRound(game.mode, game.songCount, game.currentPosition);
   const [{ open }] = await db
     .select({ open: count() })
@@ -442,6 +484,7 @@ export async function nudge(fromUserId: string, gameId: string, toUserId: string
   if (!row) return { ok: false, error: "That isn't your game." };
   const { game } = row;
   if (game.status !== "active") return { ok: false, error: "This game is over." };
+  if (game.mode === "aux") return { ok: false, error: "Pass the Aux has no nudges: you're all in the same room." };
 
   const [target] = await db
     .select({ name: users.name, email: users.email })
@@ -505,6 +548,7 @@ export async function resetAttempt(gameSongId: string, userId: string): Promise<
     .limit(1);
   if (!row) return { ok: false, error: "That song isn't in a game." };
   const { gs, game } = row;
+  if (game.mode === "aux") return { ok: false, error: "Pass the Aux turns can't be reset: the turn has already moved on." };
   if (gs.completedAt) return { ok: false, error: "Everyone has answered this song, so it can't be reset." };
   const round = openRound(game.mode, game.songCount, game.currentPosition);
   const laterUnanswered = db
@@ -547,6 +591,11 @@ export async function afterPlayerRemoved(gameIds: string[]): Promise<void> {
       await cancelGame(gameId);
       continue;
     }
+    // Pass the Aux: the turns are shared out among the players left.
+    if (game.mode === "aux") {
+      await publishGameUpdate(gameId);
+      continue;
+    }
     const round = openRound(game.mode, game.songCount, game.currentPosition);
     const open = await db
       .select({ id: gameSongs.id })
@@ -566,12 +615,12 @@ export async function afterPlayerRemoved(gameIds: string[]): Promise<void> {
 type GameEmail = { kind: "start" } | { kind: "over" };
 
 /** Email every player in a game, each with their own login button to the game. */
-async function emailPlayers(gameId: string, what: GameEmail): Promise<void> {
+export async function emailPlayers(gameId: string, what: GameEmail): Promise<void> {
   try {
     const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
     if (!game) return;
     const players = await db
-      .select({ id: users.id, name: users.name, email: users.email })
+      .select({ id: users.id, name: users.name, email: users.email, turnOrder: gamePlayers.turnOrder })
       .from(gamePlayers)
       .innerJoin(users, eq(users.id, gamePlayers.userId))
       .where(eq(gamePlayers.gameId, gameId));
@@ -586,7 +635,7 @@ async function emailPlayers(gameId: string, what: GameEmail): Promise<void> {
         const others = players.filter((o) => o.id !== p.id).map((o) => o.name);
         const email =
           what.kind === "start"
-            ? gameOnEmail(p.name, url, { songCount: game.songCount, mode: game.mode, others })
+            ? gameOnEmail(p.name, url, { songCount: game.songCount, mode: game.mode, others, turnOrder: p.turnOrder })
             : gameOverEmail(p.name, p.id, url, results!);
         await sendEmail({ to: p.email, ...email });
       } catch (err) {

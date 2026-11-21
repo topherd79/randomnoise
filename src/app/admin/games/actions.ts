@@ -8,6 +8,7 @@ import { CLIP_LENGTHS } from "@/lib/clips";
 import { cancelGame, createGame, resetAttempt } from "@/lib/games";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@/lib/rules";
 import { ALL_LENGTHS, GAME_MODES, MODES } from "@/lib/modes";
+import { AUX_MIN_PLAYERS, auxSongCount } from "@/lib/aux";
 
 // Every action here re-checks the admin: server actions are public endpoints.
 
@@ -31,7 +32,13 @@ const gameSchema = z
       artists: z.array(z.string().trim().min(1).max(300)).max(200),
     }),
   })
-  .refine((g) => MODES[g.mode].lengths.includes(g.songCount), { message: "Pick how many songs." });
+  .refine((g) => MODES[g.mode].lengths.includes(g.songCount), { message: "Pick how many songs." })
+  .refine((g) => g.mode !== "aux" || g.playerIds.length >= AUX_MIN_PLAYERS, {
+    message: `Pick at least ${AUX_MIN_PLAYERS} players for Pass the Aux.`,
+  })
+  .refine((g) => g.mode !== "aux" || g.songCount === auxSongCount(g.playerIds.length), {
+    message: "Pass the Aux is 5 songs a player.",
+  });
 
 export async function createGameAction(_prev: FormResult, formData: FormData): Promise<FormResult> {
   const admin = await requireAdmin();

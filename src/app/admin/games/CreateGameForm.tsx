@@ -6,6 +6,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { CLIP_LENGTHS } from "@/lib/clips";
 import { MAX_PLAYERS } from "@/lib/rules";
 import { GAME_MODES, MODES, type GameMode } from "@/lib/modes";
+import { AUX_MIN_PLAYERS, AUX_SONGS_PER_PLAYER, auxSongCount, turnLengthMs } from "@/lib/aux";
 import { createGameAction, type FormResult } from "./actions";
 import { isPreferred, matchesFilters, type SongMeta } from "@/lib/song-filters";
 import { SongFilterPicker, type FilterState } from "./SongFilterPicker";
@@ -80,7 +81,13 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
   const songCount = fits.includes(chosenCount) ? chosenCount : pickCount(fits);
   const [clipLength, setClipLength] = useState<number>(20);
   const [wrong, setWrong] = useState<"random" | "similar">("random");
-  const canCreate = fits.length > 0 && picked.size > 0;
+  // Pass the Aux: 5 songs a player, so the number of players sets the length.
+  const isAux = mode === "aux";
+  const auxCount = auxSongCount(Math.max(picked.size, AUX_MIN_PLAYERS));
+  const available = pool === "mix" ? catalogSize : unplayed;
+  const canCreate = isAux
+    ? picked.size >= AUX_MIN_PLAYERS && auxCount <= available
+    : fits.length > 0 && picked.size > 0;
 
   function choosePool(p: Pool) {
     setPool(p);
@@ -171,13 +178,23 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
 
       <fieldset>
         <legend className="text-sm font-semibold text-muted">Songs</legend>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {lengths.map((n) => (
-            <Option key={n} name="songCount" value={String(n)} checked={songCount === n} disabled={!fits.includes(n)} onChange={() => setSongCount(n)}>
-              {n}
-            </Option>
-          ))}
-        </div>
+        {isAux ? (
+          <>
+            <input type="hidden" name="songCount" value={auxCount} />
+            <p className="mt-2 text-[15px] font-bold">
+              {AUX_SONGS_PER_PLAYER} a player: {auxCount} songs for {Math.max(picked.size, AUX_MIN_PLAYERS)} players
+            </p>
+            <p className="mt-1 text-xs text-muted">Set by the number of players: 10, 15, 20 or 25.</p>
+          </>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {lengths.map((n) => (
+              <Option key={n} name="songCount" value={String(n)} checked={songCount === n} disabled={!fits.includes(n)} onChange={() => setSongCount(n)}>
+                {n}
+              </Option>
+            ))}
+          </div>
+        )}
         <p className="mt-2 text-xs text-muted">
           {unplayed} new {unplayed === 1 ? "song" : "songs"} (switched on, not played yet)
           {catalogSize > unplayed && ` and ${catalogSize - unplayed} from earlier games`}
@@ -213,7 +230,13 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
             </Option>
           ))}
         </div>
-        <p className="mt-2 text-xs text-muted">Songs with their own clip length or a custom clip keep it.</p>
+        <p className="mt-2 text-xs text-muted">
+          Songs with their own clip length or a custom clip keep it.
+          {isAux &&
+            ` A turn ends 5 seconds after the clip ends or the answers finish (15 s), whichever is later: ${
+              turnLengthMs(clipLength) / 1000
+            } seconds with ${clipLength}-second clips.`}
+        </p>
       </fieldset>
 
       <fieldset>
@@ -234,7 +257,19 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
       </fieldset>
 
       {/* Say why the button is greyed out instead of leaving it a mystery. */}
-      {fits.length === 0 && (
+      {isAux && auxCount > available && (
+        <p className="rounded-xl bg-danger/10 p-3 text-sm leading-relaxed text-danger" role="status">
+          Pass the Aux needs {auxCount} songs for {Math.max(picked.size, AUX_MIN_PLAYERS)} players, and only {available}{" "}
+          {pool === "new" ? "new " : "switched-on "}
+          {available === 1 ? "song" : "songs"}
+          {filtering ? " match these filters" : pool === "new" ? " haven't been played" : " are available"}.{" "}
+          {pool === "new" ? "Pick “Include songs from earlier games” above, or loosen the filters." : "Loosen the filters or pick fewer players."}
+        </p>
+      )}
+      {isAux && picked.size < AUX_MIN_PLAYERS && (
+        <p className="text-sm text-danger">Pick at least {AUX_MIN_PLAYERS} players for Pass the Aux.</p>
+      )}
+      {!isAux && fits.length === 0 && (
         <p className="rounded-xl bg-danger/10 p-3 text-sm leading-relaxed text-danger" role="status">
           {filtering && catalogSize < shortest ? (
             <>
@@ -263,11 +298,15 @@ export function CreateGameForm({ players, songs }: { players: Player[]; songs: S
           )}
         </p>
       )}
-      {fits.length > 0 && picked.size === 0 && <p className="text-sm text-danger">Pick at least one player.</p>}
+      {!isAux && fits.length > 0 && picked.size === 0 && <p className="text-sm text-danger">Pick at least one player.</p>}
       <SubmitButton pendingText="Cutting clips…" className={canCreate ? "" : "pointer-events-none opacity-40"}>
         Start the game
       </SubmitButton>
-      <p className="-mt-3 text-xs text-muted">Players get a “Game on” email with a login button, and one at the end with the full results.</p>
+      <p className="-mt-3 text-xs text-muted">
+        {isAux
+          ? "Players get a “Game on” email with a link to the lobby, which shows the random turn order. Player 1 starts the game from there, once everyone has tapped I'm in."
+          : "Players get a “Game on” email with a login button, and one at the end with the full results."}
+      </p>
       {result && !result.ok && <p className="text-sm text-danger">{result.message}</p>}
     </form>
   );

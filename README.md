@@ -23,10 +23,10 @@ and games from a desktop browser.
     look, the same song uploaded more than once, or songs missing a genre (orange chip). Download the
     whole catalog as a CSV.
 - **Starting a game (admin):**
-  - Pick a mode: The OG (one song at a time), 3 songs (three at a time) or All songs (every song open
-    from the start).
-  - Pick 1–5 players, the number of songs, a clip length (20 seconds by default), and random or
-    "similar era and genre" wrong answers.
+  - Pick a mode: The OG (one song at a time), 3 songs (three at a time), All songs (every song open
+    from the start), or Pass the Aux (everyone in one room, taking turns; see below).
+  - Pick 1–5 players (2–5 for Pass the Aux), the number of songs (Pass the Aux: 5 a player), a clip
+    length (20 seconds by default), and random or "similar era and genre" wrong answers.
   - Which songs: "New songs only", or "Include songs from earlier games" (the default), which draws at
     random from every song.
   - Optional filters: decades; genres to include (green) or leave out (red); and artists whose songs
@@ -37,6 +37,13 @@ and games from a desktop browser.
   everyone has played every open song. Standings show everyone's points so far; tap a name for that
   player's song-by-song history. Pages update by themselves as others play. When everyone else is
   done, the last player sees who's waiting on them.
+- **Pass the Aux:** for when everyone is in the same room. The game opens a lobby with a random turn
+  order ("You're player 2"); everyone taps I'm in, and player 1 taps Start (30 seconds after the last
+  I'm in, they can start without anyone missing). Players take turns: only the turn player's phone
+  plays the clip and only they can answer, while every other phone shows the same countdown, answers
+  and points live. A turn ends 5 seconds after the clip ends or the answers finish, whichever is later
+  (no answer scores 0); then everyone sees the result for 3 seconds and a 3-2-1 countdown to the next
+  player. The full songs and links are in the recap at the end.
 - **Profiles:** your profile (games, wins, % right, average answer time, top three guesses, best and
   worst genre and decade) and every past game; a friend's short profile from a name in the standings.
   Only games that are over count.

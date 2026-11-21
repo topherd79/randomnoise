@@ -59,7 +59,15 @@ export function ResultsGrid({ results }: { results: GameResults }) {
               </td>
               {players.map((p) => {
                 const pick = s.picks.find((x) => x.userId === p.userId);
-                if (!pick || pick.label === null) {
+                // Pass the Aux: someone else's turn.
+                if (!pick) {
+                  return (
+                    <td key={p.userId} className="px-3 py-3 text-muted/50" aria-label="not their turn">
+                      –
+                    </td>
+                  );
+                }
+                if (pick.label === null) {
                   return (
                     <td key={p.userId} className="px-3 py-3 text-muted">
                       No answer

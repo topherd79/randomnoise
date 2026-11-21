@@ -112,9 +112,27 @@ function names(list: string[]): string {
   return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 }
 
-export function gameOnEmail(name: string, url: string, game: { songCount: number; mode: GameMode; others: string[] }) {
+export function gameOnEmail(
+  name: string,
+  url: string,
+  game: { songCount: number; mode: GameMode; others: string[]; turnOrder?: number | null },
+) {
   const withWho = game.others.length ? ` with ${names(game.others)}` : "";
   const n = game.songCount;
+  if (game.mode === "aux") {
+    return {
+      subject: "Game on: Pass the Aux",
+      ...layout({
+        heading: `${name}, a Pass the Aux game is on`,
+        lines: [
+          `${n} songs${withWho}, all in the same room. You take turns: only the player whose turn it is hears the song and answers, and everyone else watches.`,
+          `${game.turnOrder ? `You're player ${game.turnOrder}. ` : ""}When you're together, open the lobby and tap I'm in. Player 1 starts the game.`,
+        ],
+        buttonText: "Open the lobby",
+        url,
+      }),
+    };
+  }
   const how =
     game.mode === "three"
       ? {

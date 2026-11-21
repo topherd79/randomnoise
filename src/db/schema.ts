@@ -163,13 +163,22 @@ export const games = pgTable("games", {
   songCount: integer("song_count").notNull(),
   clipLengthSec: integer("clip_length_sec").notNull(),
   wrongAnswers: text("wrong_answers").$type<WrongAnswerMode>().notNull().default("random"),
-  /** "og" (one song at a time), "three" (three at a time) or "all" (every song open from the start). */
+  /**
+   * "og" (one song at a time), "three" (three at a time), "all" (every song open
+   * from the start) or "aux" (Pass the Aux: one room, players take turns).
+   */
   mode: text("mode").$type<GameMode>().notNull().default("og"),
   /**
    * The first song of the open round, 1-based (with The OG, the song everyone is on).
    * Moves on to the next round once every player has answered every song in this one.
    */
   currentPosition: integer("current_position").notNull().default(1),
+  /**
+   * Pass the Aux only: when the current song's turn starts (its clip plays on the
+   * turn player's phone). Null while the lobby is open. Set by the server, so
+   * every phone shows the same countdown, turn and result.
+   */
+  turnStartsAt: timestamp("turn_starts_at", { withTimezone: true }),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
@@ -184,6 +193,10 @@ export const gamePlayers = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    /** Pass the Aux only: this player's place in the turn order (1 = first), drawn at random. */
+    turnOrder: integer("turn_order"),
+    /** Pass the Aux only: when they tapped "I'm in" in the lobby. */
+    joinedAt: timestamp("joined_at", { withTimezone: true }),
   },
   (t) => [primaryKey({ columns: [t.gameId, t.userId] }), index("game_players_user_idx").on(t.userId)],
 );
