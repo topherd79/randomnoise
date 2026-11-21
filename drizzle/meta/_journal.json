@@ -71,6 +71,13 @@
       "when": 1795241862699,
       "tag": "0009_pass_the_aux",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795257910624,
+      "tag": "0010_chat",
+      "breakpoints": true
     }
   ]
 }

@@ -44,6 +44,10 @@ and games from a desktop browser.
   and points live. A turn ends 5 seconds after the clip ends or the answers finish, whichever is later
   (no answer scores 0); then everyone sees the result for 3 seconds and a 3-2-1 countdown to the next
   player. The full songs and links are in the recap at the end.
+- **Chat:** every group of players (2 or more, not Pass the Aux) has one chat, kept across all their
+  games. A small tab on the right edge of the home and game pages shows your unread count; tap it and
+  the chat slides in. A message written further into a game than you've played shows as sparkles
+  until you catch up, so chat never spoils a song. Text and emoji, plus reactions (touch and hold).
 - **Profiles:** your profile (games, wins, % right, average answer time, top three guesses, best and
   worst genre and decade) and every past game; a friend's short profile from a name in the standings.
   Only games that are over count.

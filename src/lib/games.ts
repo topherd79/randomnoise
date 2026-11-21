@@ -29,6 +29,7 @@ import { maxSongsPerArtist, pickWithPreferred, pickWrongAnswers, shuffle } from 
 import { scoreAnswer } from "./rules";
 import { inRound, MODES, nextPosition, openRound, songsLeft } from "./modes";
 import { AUX_MIN_PLAYERS, auxSongCount, nextTurnPosition, turnIndex } from "./aux";
+import { chatForPlayers } from "./chat";
 import { ensureFolder, filePath, removeFile } from "./storage";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -173,9 +174,11 @@ export async function createGame(opts: {
     }
 
     const gameId = await db.transaction(async (tx) => {
+      // The group's chat, kept across their games (Pass the Aux is played in one room, and a solo game has no one to chat with).
+      const chatId = mode !== "aux" && playerIds.length >= 2 ? await chatForPlayers(tx, playerIds) : null;
       const [game] = await tx
         .insert(games)
-        .values({ songCount, clipLengthSec, wrongAnswers, mode, createdBy })
+        .values({ songCount, clipLengthSec, wrongAnswers, mode, createdBy, chatId })
         .returning({ id: games.id });
       // Pass the Aux: a random turn order, shown in the lobby and the same every lap.
       const order = mode === "aux" ? shuffle(playerIds) : null;

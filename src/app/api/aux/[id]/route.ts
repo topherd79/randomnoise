@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { answerAux, joinAux, loadAuxState, playAux, startAux } from "@/lib/aux-game";
+import { fromThisSite } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -29,20 +30,8 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/aux/[id]">)
   return Response.json({ state }, { headers: noStore });
 }
 
-/** Taps only come from this site's own pages (the session cookie is SameSite=Lax too). */
-function sameSite(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return false;
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  try {
-    return new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: Request, ctx: RouteContext<"/api/aux/[id]">) {
-  if (!sameSite(request)) return Response.json({ ok: false, error: "Not allowed." }, { status: 403, headers: noStore });
+  if (!fromThisSite(request)) return Response.json({ ok: false, error: "Not allowed." }, { status: 403, headers: noStore });
   const user = await getCurrentUser();
   if (!user) return Response.json({ ok: false, error: "Log in again." }, { status: 401, headers: noStore });
   const { id } = await ctx.params;

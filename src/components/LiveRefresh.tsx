@@ -27,8 +27,10 @@ export function LiveRefresh({ gameIds }: { gameIds: string[] }) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let waitingForMusic = false;
     const musicPlaying = () => [...document.querySelectorAll("audio")].some((a) => !a.paused && !a.ended);
+    const chatOpen = () => document.documentElement.dataset.chatOpen === "1";
     const refreshNow = () => {
-      if (musicPlaying()) {
+      // Never under a song that's playing, or an open chat: wait until it stops or closes.
+      if (musicPlaying() || chatOpen()) {
         waitingForMusic = true;
         return;
       }
@@ -48,6 +50,7 @@ export function LiveRefresh({ gameIds }: { gameIds: string[] }) {
     };
     document.addEventListener("pause", onMusicStop, true);
     document.addEventListener("ended", onMusicStop, true);
+    window.addEventListener("rn:chat-closed", onMusicStop);
 
     const params = new URLSearchParams();
     for (const id of key.split(",")) params.append("game", id);
@@ -83,6 +86,7 @@ export function LiveRefresh({ gameIds }: { gameIds: string[] }) {
       document.removeEventListener("visibilitychange", onVisible);
       document.removeEventListener("pause", onMusicStop, true);
       document.removeEventListener("ended", onMusicStop, true);
+      window.removeEventListener("rn:chat-closed", onMusicStop);
     };
   }, [key, router]);
 
