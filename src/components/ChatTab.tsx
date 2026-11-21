@@ -267,7 +267,8 @@ export function ChatTab({ chatId, chatIds, gameIds, unread: initialUnread }: Pro
         <button
           onClick={toggle}
           aria-label={open ? "Close chat" : unread > 0 ? `Chat, ${unread} unread` : "Chat"}
-          className="absolute top-[70%] -left-[50px] flex h-[58px] w-[50px] items-center justify-center rounded-l-2xl border border-r-0 border-[#3a3a48] bg-surface-2 shadow-[-6px_8px_20px_rgba(0,0,0,0.5)]"
+          // A little see-through (frosted), so whatever's under it on the page still shows faintly.
+          className="absolute top-[70%] -left-[50px] flex h-[58px] w-[50px] items-center justify-center rounded-l-2xl border border-r-0 border-[#3a3a48]/70 bg-surface-2/60 shadow-[-6px_8px_20px_rgba(0,0,0,0.3)] backdrop-blur-[3px]"
         >
           {open ? (
             <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true">
